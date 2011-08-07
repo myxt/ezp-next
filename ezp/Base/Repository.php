@@ -9,6 +9,8 @@
 
 namespace ezp\Base;
 use ezp\Persistence\Repository\Handler,
+    ezp\Base\ModelStorage,
+    ezp\Base\ModelStorageInterface,
     RuntimeException,
     DomainException;
 
@@ -33,6 +35,13 @@ class Repository
     protected $user;
 
     /**
+     * Currently logged in user object for permission purposes
+     *
+     * @var \ezp\Base\ModelStorageInterface
+     */
+    protected $objects;
+
+    /**
      * Instances of services
      *
      * @var Service[]
@@ -50,6 +59,7 @@ class Repository
     {
         $this->handler = $handler;
         //$this->user = $user;
+        $this->objects = new ModelStorage();
     }
 
     /**
@@ -65,7 +75,7 @@ class Repository
             return $this->services[$className];
 
         if ( class_exists( $className ) )
-            return $this->services[$className] = new $className( $this, $this->handler );
+            return $this->services[$className] = new $className( $this, $this->handler, $this->objects );
 
         throw new RuntimeException( "Could not load '$className' service!" );
     }

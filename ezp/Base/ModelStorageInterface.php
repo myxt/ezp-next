@@ -21,16 +21,17 @@ interface ModelStorageInterface
      * Attach a model object
      *
      * @param \ezp\Base\Model $object
-     * @param array $data
-     * @return ModelStorageInterface
+     * @param array $primaryIds Eg: array( 'id' => 2 ) or array( 'id' => 2, 'version' => 1 )
      */
-    public function add( Model $object, array $data = array() );
+    public function add( Model $object, array $primaryIds );
 
     /**
      * Checks if storage contains a model
      *
      * @param \ezp\Base\Model $object
-     * @return bool
+     * @return bool|null Null means the object is not in array but object is managed
+     *                   aka object has been removed from array for memory preserving reasons,
+     *                   but object is still managed.
      */
      public function has( Model $object );
 
@@ -38,33 +39,16 @@ interface ModelStorageInterface
      * Detach a model object
      *
      * @param \ezp\Base\Model $object
-     * @return ModelStorageInterface
+     * @return bool
      */
     public function remove( Model $object );
 
     /**
      * Get hash value for a given Model object
      *
-     * @param \ezp\Base\Model $object
-     * @return array
+     * @param string $className
+     * @param array $primaryIds
+     * @return \ezp\Base\Model|null
      */
-     public function get( Model $object );
-
-    /**
-     * Set hash value for a given Model object
-     *
-     * @param \ezp\Base\Model $object
-     * @param array $data
-     * @return ModelStorageInterface
-     */
-     public function set( Model $object, array $data = array() );
-
-    /**
-     * Purge clean objects cache or all if $dirty is true
-     *
-     * @param bool $dirty
-     * @param bool $detachObserver
-     * @return void
-     */
-     public function purge( $dirty = false, $detachObserver = false );
+     public function get( $className, array $primaryIds );
 }

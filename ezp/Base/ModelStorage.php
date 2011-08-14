@@ -11,117 +11,129 @@ namespace ezp\Base;
 use ezp\Base\Observable,
     ezp\Base\Observer,
     ezp\Base\Model,
-    ezp\Base\ModelStorageInterface,
-    SplObjectStorage;
+    ezp\Base\ModelStorageInterface;
 
 /**
  * Model Storage, object storage for models with dirty tracking
  *
  */
-class ModelStorage extends SplObjectStorage implements Observer, ModelStorageInterface
+class ModelStorage implements Observer, ModelStorageInterface
 {
+    /**
+     * The identity map that holds references to all managed entities.
+     *
+     * The entities are grouped by their class name and then primary string, which is a
+     *
+     * @var array[]Model
+     */
+    private $identityMap = array();
+
+    /**
+     * Map of all identifiers of managed entities
+     *
+     * Keys are object hash (spl_object_hash) and value is primary key string {@see $identityMap}
+     * As code that uses this have an instance of the object, class name can be retrieved from it.
+     *
+     * @var array[]
+     */
+    private $entityIdentifiers = array();
+
     /**
      * Attach a model object
      *
      * @param \ezp\Base\Model $object
-     * @param array $data
-     * @return ModelStorage
+     * @param array $primaryIds Eg: array( 'id' => 2 ) or array( 'id' => 2, 'version' => 1 )
+     * @return bool False if object already was part of storage
      */
-    public function add( Model $object, array $data = array() )
+    public function add( Model $object, array $primaryIds )
     {
+        $hash = spl_object_hash( $object );
+        if ( isset( $this->entityIdentifiers[$hash] ) )
+            return false;
+
+        $className = get_class( $object );
+        $primaryIdString = implode( '_', $primaryIds );
+        if ( isset( $this->identityMap[$className][$primaryIdString] ) )
+            return false;// @todo: throw runtime exception
+
         $object->attach( $this );
-        parent::attach( $object, $data + array( 'is_dirty' => false ) );
-        return $this;
+        $this->identityMap[$className][$primaryIdString] = $object;
+        $this->entityIdentifiers[$hash] = $primaryIdString;
+        return true;
     }
 
     /**
      * Checks if storage contains a model
      *
      * @param \ezp\Base\Model $object
-     * @return bool
+     * @return bool|null Null means the object is not in array but object is managed
+     *                   aka object has been removed from array for memory preserving reasons,
+     *                   but object is still managed.
      */
-     public function has( Model $object )
-     {
-         return parent::contains( $object );
-     }
+    public function has( Model $object )
+    {
+        $hash = spl_object_hash( $object );
+        if ( !isset( $this->entityIdentifiers[$hash] ) )
+            return false;
+
+        $className = get_class( $object );
+        $primaryIdString = $this->entityIdentifiers[$hash];
+        if ( !isset( $this->identityMap[$className][$primaryIdString] ) )
+            return null;
+        return true;
+    }
 
     /**
      * Detach a model object
      *
      * @param \ezp\Base\Model $object
-     * @return ModelStorage
+     * @return bool
      */
     public function remove( Model $object )
     {
+        $hash = spl_object_hash( $object );
+        if ( !isset( $this->entityIdentifiers[$hash] ) )
+            return null;
+
+        $className = get_class( $object );
+        $primaryIdString = $this->entityIdentifiers[$hash];
+        unset( $this->entityIdentifiers[$hash] );
         $object->detach( $this );
-        parent::detach( $object );
-        return $this;
+
+        if ( isset( $this->identityMap[$className][$primaryIdString] ) )
+            unset( $this->identityMap[$className][$primaryIdString] );
+
+        return true;
     }
 
     /**
-     * Get hash value for a given Model object
+     * Get a Model object by class name and primary id
      *
-     * @param \ezp\Base\Model $object
-     * @return array
+     * @param string $className
+     * @param array $primaryIds Eg: array( 'id' => 2 ) or array( 'id' => 2, 'version' => 1 )
+     * @return \ezp\Base\Model|null
      */
-     public function get( Model $object )
-     {
-         return $this->offsetGet( $object );
-     }
-
-    /**
-     * Set hash value for a given Model object
-     *
-     * @param \ezp\Base\Model $object
-     * @param array $data
-     * @return ModelStorage
-     */
-     public function set( Model $object, array $data = array() )
-     {
-         $this->offsetSet( $object, $data );
-         return $this;
-     }
+    public function get( $className, array $primaryIds )
+    {
+        $primaryIdString = implode( '_', $primaryIds );
+        if ( !isset( $this->identityMap[$className][$primaryIdString] ) )
+            return null;
+        return $this->identityMap[$className][$primaryIdString];
+    }
 
     /**
      * Called when subject has been updated
      *
-     * @param \ezp\Base\Model $subject
+     * @param \ezp\Base\Observable $subject
      * @param string $event
-     * @return ModelStorage
+     * @return Observer
      */
     public function update( Observable $subject, $event = 'update' )
     {
         if ( $event !== 'update' )
             return $this;
 
-        // Re attach object if it has been purged from object cache for freeing memory
-        // @todo impl purge function that only removes from storage but not detaches observer
-        // @todo impl some sort of proper dirty tracking instead of assuming it is dirty on update
-        if ( !parent::contains( $subject ) )
-            parent::attach( $subject, array( 'is_dirty' => true ) );
-        else
-            $this[$subject] = array( 'is_dirty' => true ) + $this[$subject];
+        // @todo Re attach object if it has been purged from object cache for freeing memory
         return $this;
     }
-
-    /**
-     * Purge clean objects cache or all if $dirty is true
-     *
-     * @param bool $dirty
-     * @param bool $detachObserver
-     * @return void
-     */
-     public function purge( $dirty = false, $detachObserver = false )
-     {
-         foreach ( $this as $object => $data )
-         {
-             if ( !$dirty && !$data['is_dirty'] )
-                 continue;
-
-             if ( $detachObserver )
-                 $this->remove( $object );
-             else
-                 parent::detach( $object );
-         }
-     }
 }

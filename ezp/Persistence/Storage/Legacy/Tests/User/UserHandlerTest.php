@@ -141,4 +141,240 @@ class UserHandlerTest extends TestCase
             'Expected no existing user.'
         );
     }
+
+    public function testCreateNewRoleWithoutPolicies()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = new Persistence\User\Role();
+        $role->name = 'Test';
+
+        $handler->createRole( $role );
+
+        $this->assertQueryResult(
+            array( array( 1, 'Test' ) ),
+            $this->handler->createSelectQuery()->select( 'id', 'name' )->from( 'ezrole' ),
+            'Expected a new role.'
+        );
+    }
+
+    public function testCreateNewRoleRoleId()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = new Persistence\User\Role();
+        $role->name = 'Test';
+
+        $role = $handler->createRole( $role );
+
+        $this->assertSame( '1', $role->id );
+    }
+
+    public function testUpdateRole()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = new Persistence\User\Role();
+        $role->name = 'Test';
+
+        $role = $handler->createRole( $role );
+
+        $update = new Persistence\User\RoleUpdateStruct();
+        $update->id = $role->id;
+        $update->name = 'Changed';
+
+        $handler->updateRole( $update );
+
+        $this->assertQueryResult(
+            array( array( 1, 'Changed' ) ),
+            $this->handler->createSelectQuery()->select( 'id', 'name' )->from( 'ezrole' ),
+            'Expected a changed role.'
+        );
+    }
+
+    public function testDeleteRole()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = new Persistence\User\Role();
+        $role->name = 'Test';
+
+        $role = $handler->createRole( $role );
+
+        $handler->deleteRole( $role->id );
+
+        $this->assertQueryResult(
+            array( ),
+            $this->handler->createSelectQuery()->select( 'id', 'name' )->from( 'ezrole' ),
+            'Expected an empty set.'
+        );
+    }
+
+    public function testAddPolicyToRole()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = new Persistence\User\Role();
+        $role->name = 'Test';
+        $handler->createRole( $role );
+
+        $policy = new Persistence\User\Policy();
+        $policy->module = 'foo';
+        $policy->moduleFunction = 'bar';
+
+        $handler->addPolicy( $role->id, $policy );
+
+        $this->assertQueryResult(
+            array( array( 1, 'foo', 'bar', 1 ) ),
+            $this->handler->createSelectQuery()->select( 'id', 'module_name', 'function_name', 'role_id' )->from( 'ezpolicy' ),
+            'Expected a new policy.'
+        );
+    }
+
+    public function testAddPolicyPolicyId()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = new Persistence\User\Role();
+        $role->name = 'Test';
+        $handler->createRole( $role );
+
+        $policy = new Persistence\User\Policy();
+        $policy->module = 'foo';
+        $policy->moduleFunction = 'bar';
+
+        $policy = $handler->addPolicy( $role->id, $policy );
+
+        $this->assertEquals( 1, $policy->id );
+    }
+
+    protected function createRole()
+    {
+        $handler = $this->getUserHandler();
+
+        $policy1 = new Persistence\User\Policy();
+        $policy1->module = 'foo';
+        $policy1->moduleFunction = 'bar';
+
+        $policy2 = new Persistence\User\Policy();
+        $policy2->module = 'foo';
+        $policy2->moduleFunction = 'blubb';
+
+        $role = new Persistence\User\Role();
+        $role->name = 'Test';
+        $role->policies = array( $policy1, $policy2 );
+        return $handler->createRole( $role );
+    }
+
+    public function testImplicitelyCreatePolicies()
+    {
+        $this->createRole();
+
+        $this->assertQueryResult(
+            array(
+                array( 1, 'foo', 'bar', 1 ),
+                array( 2, 'foo', 'blubb', 1 ),
+            ),
+            $this->handler->createSelectQuery()->select( 'id', 'module_name', 'function_name', 'role_id' )->from( 'ezpolicy' ),
+            'Expected a new policy.'
+        );
+    }
+
+    public function testRemovePolicy()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = $this->createRole();
+        $handler->removePolicy( $role->id, $role->policies[0]->id );
+
+        $this->assertQueryResult(
+            array(
+                array( 2, 'foo', 'blubb', 1 ),
+            ),
+            $this->handler->createSelectQuery()->select( 'id', 'module_name', 'function_name', 'role_id' )->from( 'ezpolicy' ),
+            'Expected a new policy.'
+        );
+    }
+
+    public function testAddRoleToUser()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = $this->createRole();
+        $handler->createUser( $user = $this->getValidUser() );
+
+        $handler->assignRole( $user->id, $role->id, array() );
+
+        $this->assertQueryResult(
+            array(
+                array( 1, 42, 1, null, null ),
+            ),
+            $this->handler->createSelectQuery()->select( 'id', 'contentobject_id', 'role_id', 'limit_identifier', 'limit_value' )->from( 'ezuser_role' ),
+            'Expected a new user policy association.'
+        );
+    }
+
+    public function testAddRoleToUserWithLimitation()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = $this->createRole();
+        $handler->createUser( $user = $this->getValidUser() );
+
+        $handler->assignRole( $user->id, $role->id, array(
+            'Subtree' => array( '/1' ),
+        ) );
+
+        $this->assertQueryResult(
+            array(
+                array( 1, 42, 1, 'Subtree', '/1' ),
+            ),
+            $this->handler->createSelectQuery()->select( 'id', 'contentobject_id', 'role_id', 'limit_identifier', 'limit_value' )->from( 'ezuser_role' ),
+            'Expected a new user policy association.'
+        );
+    }
+
+    public function testAddRoleToUserWithComplexLimitation()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = $this->createRole();
+        $handler->createUser( $user = $this->getValidUser() );
+
+        $handler->assignRole( $user->id, $role->id, array(
+            'Subtree' => array( '/1', '/1/2' ),
+            'Foo' => array( 'Bar' ),
+        ) );
+
+        $this->assertQueryResult(
+            array(
+                array( 1, 42, 1, 'Subtree', '/1' ),
+                array( 2, 42, 1, 'Subtree', '/1/2' ),
+                array( 3, 42, 1, 'Foo', 'Bar' ),
+            ),
+            $this->handler->createSelectQuery()->select( 'id', 'contentobject_id', 'role_id', 'limit_identifier', 'limit_value' )->from( 'ezuser_role' ),
+            'Expected a new user policy association.'
+        );
+    }
+
+    public function testRemoveUserRoleAssociation()
+    {
+        $handler = $this->getUserHandler();
+
+        $role = $this->createRole();
+        $handler->createUser( $user = $this->getValidUser() );
+
+        $handler->assignRole( $user->id, $role->id, array(
+            'Subtree' => array( '/1', '/1/2' ),
+            'Foo' => array( 'Bar' ),
+        ) );
+
+        $handler->removeRole( $user->id, $role->id );
+
+        $this->assertQueryResult(
+            array(),
+            $this->handler->createSelectQuery()->select( 'id', 'contentobject_id', 'role_id', 'limit_identifier', 'limit_value' )->from( 'ezuser_role' ),
+            'Expected no user policy associations.'
+        );
+    }
 }

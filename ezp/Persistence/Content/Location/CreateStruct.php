@@ -20,14 +20,14 @@ class CreateStruct extends ValueObject
      *
      * @var int
      */
-    public $priority;
+    public $priority = 0;
 
     /**
      * Indicates that the Location entity has been explicitly marked as hidden.
      *
      * @var bool
      */
-    public $hidden;
+    public $hidden = false;
 
     /**
      * Indicates that the Location is implicitly marked as hidden by a parent
@@ -35,7 +35,7 @@ class CreateStruct extends ValueObject
      *
      * @var bool
      */
-    public $invisible;
+    public $invisible = false;
 
     /**
      * Remote ID.
@@ -54,6 +54,13 @@ class CreateStruct extends ValueObject
     public $contentId;
 
     /**
+     * version of the corresponding {@link Content}.
+     *
+     * @var int Content version.
+     */
+    public $contentVersion;
+
+    /**
      * Legacy format of the url alias.
      *
      * This field might be removed in a later version.
@@ -61,20 +68,6 @@ class CreateStruct extends ValueObject
      * @var string
      */
     public $pathIdentificationString;
-
-    /**
-     * The materialized path of the location entry.
-     *
-     * @var string
-     */
-    public $pathString;
-
-    /**
-     * Timestamp of the latest update of a content object in a sub location.
-     *
-     * @var int
-     */
-    public $modifiedSubLocation;
 
     /**
      * Identifier of the main location.
@@ -85,13 +78,6 @@ class CreateStruct extends ValueObject
      * @var mixed
      */
     public $mainLocationId;
-
-    /**
-     * Depth location has in the location tree.
-     *
-     * @var int
-     */
-    public $depth;
 
     /**
      * Specifies which property the child locations should be sorted on.

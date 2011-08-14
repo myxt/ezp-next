@@ -9,11 +9,18 @@
 
 namespace ezp\Content;
 use ezp\Base\Service as BaseService,
+    ezp\Base\Collection\Lazy,
     ezp\Base\Exception\NotFound,
+    ezp\Base\Exception\InvalidArgumentType,
+    ezp\Base\Locale,
     ezp\Content,
+    ezp\Content\Location,
     ezp\Content\Query,
     ezp\Content\Query\Builder,
-    ezp\Persistence\ValueObject;
+    ezp\Persistence\ValueObject,
+    ezp\Persistence\Content as ContentValue,
+    ezp\Persistence\Content\Criterion\ContentId,
+    ezp\Persistence\Content\Criterion\Operator;
 
 /**
  * Content service, used for Content operations
@@ -51,20 +58,23 @@ class Service extends BaseService
 
     /**
      * Loads a content from its id ($contentId)
+     *
      * @param int $contentId
      * @return Content
-     * @throws NotFound if content could not be found
+     * @throws \ezp\Base\Exception\NotFound if content could not be found
      */
     public function load( $contentId )
     {
-        $content = $this->handler->contentHandler()->load( $contentId );
-        if ( !$content )
+        $contentVO = $this->handler->contentHandler()->findSingle( new ContentId( $contentId ) );
+        if ( !$contentVO instanceof ContentValue )
             throw new NotFound( 'Content', $contentId );
-        return $content;
+
+        return $this->buildDomainObject( $contentVO );
     }
 
     /**
      * Finds content using a $query
+     *
      * @param Query $query
      * @return Content[]
      */
@@ -77,14 +87,11 @@ class Service extends BaseService
      * Deletes a content from the repository
      *
      * @param Content $content
+     * @throws \ezp\Base\Exception\NotFound if content could not be found
      */
     public function delete( Content $content )
     {
-        // take care of:
-        // 1. removing the subtree of all content's locations
-        // 2. removing the content it self (with version, translations, fields
-        // and so on...)
-        // note: this is different from Subtree::delete()
+        $this->handler->contentHandler()->delete( $content->id );
     }
 
     /**
@@ -116,9 +123,33 @@ class Service extends BaseService
         return new Builder();
     }
 
-    protected function buildDomainObject( ValueObject $vo )
+    protected function buildDomainObject( ContentValue $vo )
     {
+        $content = new Content( new Type, new Locale( "eng-GB" ) );
+        $content->setState(
+            array(
+                "section" => new Proxy( $this->repository->getSectionService(), $vo->sectionId ),
+                "contentType" => new Proxy( $this->repository->getContentTypeService(), $vo->typeId ),
+                "properties" => $vo
+            )
+        );
 
+        $locationHandler = $this->repository->getLocationService();
+        foreach ( $vo->locations as $locationValue )
+        {
+            $content->locations[] = $location = new Location( $content );
+            $location->setState( array( 'properties' => $locationValue,
+                                        'parent' => new Proxy( $locationHandler, $locationValue->parentId ),
+                                        'children' => new Lazy(
+                                            'ezp\\Content\\Location',
+                                            $locationHandler,
+                                            $location, // api seems to use location to be able to get out sort info as well
+                                            'children' // Not implemented yet so this collection will return empty array atm
+                                        ) ) );
+
+        }
+
+        return $content;
     }
 }
 ?>

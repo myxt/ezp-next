@@ -40,19 +40,29 @@ class Content extends ValueObject
     public $ownerId;
 
     /**
-     * List containing the loaded version.
+     * The loaded version
      *
-     * List with only a single Version, containing version information and all
-     * {@link Field}s in this version (in all languages). Non-translateable
-     * fields will only occur once!
+     * The Version, containing version information and all
+     * {@link \ezp\Persistence\Content\Field}s in this version (in all languages).
+     * Non-translateable fields will only occur once!
      *
-     * @var array(Content\Version)
+     * @var \ezp\Persistence\Content\Version
      */
-    public $versionInfos = array();
+    public $version;
 
     /**
-     * @var array(Content\Location)
+     * @var \ezp\Persistence\Content\Location[]
      */
     public $locations = array();
+
+    /**
+     * @var bool Always available flag
+     */
+    public $alwaysAvailable;
+
+    /**
+     * @var string Remote identifier used as a custom identifier for the object
+     */
+    public $remoteId;
 }
 ?>

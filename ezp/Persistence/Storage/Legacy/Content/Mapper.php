@@ -51,9 +51,25 @@ class Mapper
         $content->typeId       = $struct->typeId;
         $content->sectionId    = $struct->sectionId;
         $content->ownerId      = $struct->ownerId;
-        $content->versionInfos = array();
 
         return $content;
+    }
+
+    /**
+     * Creates a Content from the given $struct
+     *
+     * @param \ezp\Persistence\Content\CreateStruct $struct
+     * @return Content
+     */
+    public function createLocationCreateStruct( Content $content, CreateStruct $struct )
+    {
+        $location = new Content\Location\CreateStruct();
+
+        $location->remoteId       = md5( uniqid() );
+        $location->contentId      = $content->id;
+        $location->contentVersion = $content->version->id;
+
+        return $location;
     }
 
     /**
@@ -104,12 +120,10 @@ class Mapper
      *
      * @param array $rows
      * @return array(Content)
-     * @todo Take care for locations
      */
     public function extractContentFromRows( array $rows )
     {
         $contentObjs = array();
-        $versions    = array();
 
         foreach ( $rows as $row )
         {
@@ -117,23 +131,27 @@ class Mapper
             if ( !isset( $contentObjs[$contentId] ) )
             {
                 $contentObjs[$contentId]  = $this->extractContentFromRow( $row );
-                $versions[$contentId] = array();
             }
 
-            $versionNo = (int) $row['ezcontentobject_version_version'];
-            if ( !isset( $versions[$contentId][$versionNo] ) )
+            if ( !isset( $versions[$contentId] ) )
             {
-                $versions[$contentId][$versionNo] =
-                    $this->extractVersionFromRow( $row );
+                $versions[$contentId] = $this->extractVersionFromRow( $row );
             }
 
-            $versions[$contentId][$versionNo]->fields[] =
-                $this->extractFieldFromRow( $row );
+            $field = (int) $row['ezcontentobject_attribute_id'];
+            if ( !isset( $versions[$contentId]->fields[$field] ) )
+            {
+                $versions[$contentId]->fields[$field] = $this->extractFieldFromRow( $row );
+            }
+
+            $contentObjs[$contentId]->locations[(int) $row['ezcontentobject_tree_node_id']] = true;
         }
 
         foreach ( $contentObjs as $content )
         {
-            $content->versionInfos = array_values( $versions[$content->id] );
+            $content->version         = $versions[$content->id];
+            $content->version->fields = array_values( $content->version->fields );
+            $content->locations       = array_keys( $content->locations );
         }
         return array_values( $contentObjs );
     }
@@ -143,19 +161,19 @@ class Mapper
      *
      * @param array $row
      * @return Content
-     * @todo Take care for locations
      */
     protected function extractContentFromRow( array $row )
     {
         $content = new Content();
 
-        $content->id           = (int) $row['ezcontentobject_id'];
-        $content->name         = $row['ezcontentobject_name'];
-        $content->typeId       = (int) $row['ezcontentobject_contentclass_id'];
-        $content->sectionId    = (int) $row['ezcontentobject_section_id'];
-        $content->ownerId      = (int) $row['ezcontentobject_owner_id'];
-        $content->versionInfos = array();
-        $content->locations    = array();
+        $content->id              = (int) $row['ezcontentobject_id'];
+        $content->name            = $row['ezcontentobject_name'];
+        $content->typeId          = (int) $row['ezcontentobject_contentclass_id'];
+        $content->sectionId       = (int) $row['ezcontentobject_section_id'];
+        $content->ownerId         = (int) $row['ezcontentobject_owner_id'];
+        $content->remoteId        = $row['ezcontentobject_remote_id'];
+        $content->alwaysAvailable = (bool) ( $row['ezcontentobject_version_language_mask'] & 1 );
+        $content->locations       = array();
 
         return $content;
     }

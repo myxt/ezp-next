@@ -8,7 +8,9 @@
  */
 
 namespace ezp\Persistence\Storage\Legacy\User\Role;
-use ezp\Persistence\User\Role;
+use ezp\Persistence\User\RoleUpdateStruct,
+    ezp\Persistence\User\Policy,
+    ezp\Persistence\User\Role;
 
 /**
  * Base class for content type gateways.
@@ -26,9 +28,9 @@ abstract class Gateway
     /**
      * Update role
      *
-     * @param Role $role
+     * @param RoleUpdateStruct $role
      */
-    abstract public function updateRole( Role $role );
+    abstract public function updateRole( RoleUpdateStruct $role );
 
     /**
      * Delete the specified role
@@ -36,4 +38,22 @@ abstract class Gateway
      * @param mixed $roleId
      */
     abstract public function deleteRole( $roleId );
+
+    /**
+     * Adds a policy to a role
+     *
+     * @param mixed $roleId
+     * @param Policy $policy
+     * @return void
+     */
+    abstract public function addPolicy( $roleId, Policy $policy );
+
+    /**
+     * Removes a policy from a role
+     *
+     * @param mixed $roleId
+     * @param mixed $policyId
+     * @return void
+     */
+    abstract public function removePolicy( $roleId, $policyId );
 }

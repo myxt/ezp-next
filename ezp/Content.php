@@ -8,12 +8,16 @@
  */
 
 namespace ezp;
-use ezp\Base\AbstractModel,
+use ezp\Base\Model,
+    ezp\Base\Observable,
     ezp\Base\Locale,
-    ezp\Base\TypeCollection,
+    ezp\Base\Collection\Type as TypeCollection,
     ezp\Content\Translation,
     ezp\Content\Type,
+    ezp\Content\Section,
+    ezp\Content\Proxy,
     ezp\Content\Version,
+    ezp\Persistence\Content as ContentValue,
     DateTime,
     InvalidArgumentException;
 
@@ -22,47 +26,50 @@ use ezp\Base\AbstractModel,
  *
  * It is used for both input and output manipulation.
  *
- * @property-read integer $id
- *                The Content's ID, automatically assigned by the persistence layer
- * @property-read integer status
- *                The Content's status, as one of the ezp\Content::STATUS_* constants
- * @property-read Version[] $versions
- *                   Iterable collection of versions for content. Array-accessible :;
- *                   <code>
- *                   $myFirstVersion = $content->versions[1];
- *                   $myThirdVersion = $content->versions[3];
- *                   </code>
- * @property-read Location[] $locations
- *                   Locations for content. Iterable, countable and Array-accessible (with numeric indexes)
- *                   First location referenced in the collection represents the main location for content
- *                   <code>
- *                   $mainLocation = $content->locations[0];
- *                   $anotherLocation = $content->locations[2];
- *                   $locationById = $content->locations->byId( 60 );
- *                   </code>
- * @property Content[] $relations
- *                                          Collection of ezp\Content objects, related to the current one
- * @property Content[] $reverseRelations
- *                                          Collection of ezp\Content objects, reverse-related to the current one
- * @property Translation[] $translations
- *                                             Collection of content's translations, indexed by locale (ie. eng-GB)
- *                                             <code>
- *                                             $myEnglishTranslation = $content->translations["eng-GB"];
- *                                             $myEnglishTitle = $content->translations["eng-GB"]->fields->title; // Where "title" is the field identifier
- *                                             </code>
- * @property Field[] $fields
- *                                       Collection of content's fields in default (current) language.
- *                                       Shorthand property to directly access to the content's fields in current language
- *                                       <code>
- *                                       $myTitle = $content->fields->title; // Where "title" is the field identifier
- *                                       </code>
- *
+ * @property-read int $id The Content's ID, automatically assigned by the persistence layer
+ * @property-read int $currentVersion The Content's current version
+ * @property-read string $remoteId The Content's remote identifier (custom identifier for the object)
+ * @property-read string $name The Content's name
+ * @property-read bool $alwaysAvailable The Content's always available flag
+ * @property-read int status The Content's status, as one of the ezp\Content::STATUS_* constants
+ * @property-read \ezp\Content\Type contentType The Content's type
+ * @property-read \ezp\Content\Version[] $versions
+ *                Iterable collection of versions for content. Array-accessible :;
+ *                <code>
+ *                $myFirstVersion = $content->versions[1];
+ *                $myThirdVersion = $content->versions[3];
+ *                </code>
+ * @property-read \ezp\Content\Location[] $locations
+ *                Locations for content. Iterable, countable and Array-accessible (with numeric indexes)
+ *                First location referenced in the collection represents the main location for content
+ *                <code>
+ *                $mainLocation = $content->locations[0];
+ *                $anotherLocation = $content->locations[2];
+ *                $locationById = $content->locations->byId( 60 );
+ *                </code>
+ * @property-read DateTime $creationDate The date the object was created
+ * @property-read \ezp\Content\Section $section The Section the content belongs to
+ * @property \ezp\Content[] $relations Collection of ezp\Content objects, related to the current one
+ * @property \ezp\Content[] $reverseRelations Collection of ezp\Content objects, reverse-related to the current one
+ * @property \ezp\Content\Translation[] $translations
+ *           Collection of content's translations, indexed by locale (ie. eng-GB)
+ *           <code>
+ *           $myEnglishTranslation = $content->translations["eng-GB"];
+ *           $myEnglishTitle = $content->translations["eng-GB"]->fields->title; // Where "title" is the field identifier
+ *           </code>
+ * @property \ezp\Content\Field[] $fields
+ *           Collection of content's fields in default (current) language.
+ *           Shorthand property to directly access to the content's fields in current language
+ *           <code>
+ *           $myTitle = $content->fields->title; // Where "title" is the field identifier
+ *           </code>
+ * @property int $ownerId Owner identifier
  */
-class Content extends AbstractModel
+class Content extends Model
 {
     /**
      * Publication status constants
-     * @var integer
+     * @var int
      */
     const STATUS_DRAFT = 0;
     const STATUS_PUBLISHED = 1;
@@ -71,7 +78,7 @@ class Content extends AbstractModel
     /**
      * @var array Readable of properties on this object
      */
-    protected $readableProperties = array(
+    protected $readWriteProperties = array(
         'id' => false,
         'currentVersion' => false,
         'status' => false,
@@ -81,13 +88,15 @@ class Content extends AbstractModel
         'reversedRelations' => false,
         'translations' => true,
         'locations' => true,
-        'contentType' => false,
+        'alwaysAvailable' => true,
+        'remoteId' => true,
     );
 
     /**
      * @var array Dynamic properties on this object
      */
     protected $dynamicProperties = array(
+        'creationDate' => false,
         'mainLocation' => false,
         'section' => false,
         'sectionId' => false,
@@ -97,46 +106,11 @@ class Content extends AbstractModel
     );
 
     /**
-     * Content object id.
-     *
-     * @var int
-     */
-    protected $id = 0;
-
-    /**
-     * Content object current version.
-     *
-     * @var int
-     */
-    protected $currentVersion = 0;
-
-    /**
-     * A custom ID for the object
-     *
-     * @var string
-     */
-    public $remoteId = '';
-
-    /**
-     * The date the object was created
-     *
-     * @var DateTime
-     */
-    public $creationDate;
-
-    /**
-     * The id of the user who first created the content
-     *
-     * @var int
-     */
-    public $ownerId = 0;
-
-    /**
      * The Section the content belongs to
      *
-     * @var Section
+     * @var \ezp\Content\Section
      */
-    public $section;
+    protected $section;
 
     /**
      * The Content's status, as one of the ezp\Content::STATUS_* constants
@@ -148,83 +122,71 @@ class Content extends AbstractModel
     /**
      * Locations collection
      *
-     * @var Location[]
+     * @var \ezp\Content\Location[]
      */
     protected $locations;
 
     /**
      * Content type object that this Content object is an instance of
      *
-     * @var Type
+     * @var \ezp\Content\Type
      */
     protected $contentType;
 
     /**
      * Relations collection
      *
-     * @var Content[]
+     * @var \ezp\Content[]
      */
     protected $relations;
 
     /**
      * Reverse relation collection
      *
-     * @var Content[]
+     * @var \ezp\Content[]
      */
     protected $reversedRelations;
 
     /**
      * Translations collection
      *
-     * @var Translation[]
+     * @var \ezp\Content\Translation[]
      */
     protected $translations;
 
     /**
-     * Name of the content
+     * \ezp\Base\Locale
      *
-     * @var string
-     */
-    protected $name;
-
-    /**
-     * Always available flag
-     *
-     * @var boolean
-     */
-    public $alwaysAvailable;
-
-    /**
-     * Locale
-     *
-     * @var Locale
+     * @var \ezp\Base\Locale
      */
     protected $mainLocale;
 
     /**
      * Versions
      *
-     * @var Version[]
+     * @var \ezp\Content\Version[]
      */
     protected $versions;
 
     /**
      * Create content based on content type object
      *
-     * @param Type $contentType
-     * @param Locale $mainLocale
+     * @param \ezp\Content\Type $contentType
+     * @param \ezp\Base\Locale $mainLocale
      */
     public function __construct( Type $contentType, Locale $mainLocale )
     {
+        $this->properties = new ContentValue;
+        /*
+        @FIXME where is this property going to be stored?
         $this->creationDate = new DateTime();
+        */
         $this->mainLocale = $mainLocale;
-        $this->alwaysAvailable = false;
         $this->versions = new TypeCollection( 'ezp\\Content\\Version' );
         $this->locations = new TypeCollection( 'ezp\\Content\\Location' );
         $this->relations = new TypeCollection( 'ezp\\Content' );
         $this->reversedRelations = new TypeCollection( 'ezp\\Content' );
         $this->translations = new TypeCollection( 'ezp\\Content\\Translation' );
-        $this->name = false;
         $this->contentType = $contentType;
         $this->addTranslation( $mainLocale );
     }
@@ -232,7 +194,7 @@ class Content extends AbstractModel
     /**
      * Return Main location object on this Content object
      *
-     * @return Location
+     * @return \ezp\Content\Location
      */
     protected function getMainLocation()
     {
@@ -242,7 +204,7 @@ class Content extends AbstractModel
     /**
      * Return a collection containing all available versions of the Content
      *
-     * @return Version[]
+     * @return \ezp\Content\Version[]
      */
     protected function getVersions()
     {
@@ -257,7 +219,7 @@ class Content extends AbstractModel
     /**
      * Find current version amongst version objects
      *
-     * @return Version|null
+     * @return \ezp\Content\Version|null
      */
     protected function getCurrentVersion()
     {
@@ -272,7 +234,7 @@ class Content extends AbstractModel
     /**
      * Return Type object
      *
-     * @return Type
+     * @return \ezp\Content\Type
      */
     protected function getContentType()
     {
@@ -286,7 +248,7 @@ class Content extends AbstractModel
     /**
      * Get fields of current version
      *
-     * @return Field[]
+     * @return \ezp\Content\Field[]
      */
     protected function getFields()
     {
@@ -296,7 +258,7 @@ class Content extends AbstractModel
     /**
      * Sets the Section the Content belongs to
      *
-     * @param Section $section
+     * @param \ezp\Content\Section $section
      */
     protected function setSection( Section $section )
     {
@@ -306,7 +268,7 @@ class Content extends AbstractModel
     /**
      * Returns the Section the Content belongs to
      *
-     * @return Section
+     * @return \ezp\Content\Section
      */
     protected function getSection()
     {
@@ -335,9 +297,9 @@ class Content extends AbstractModel
      * Adds a Translation in $locale optionally based on existing
      * translation in $base.
      *
-     * @param Locale $locale
-     * @param Version $base
-     * @return Translation
+     * @param \ezp\Base\Locale $locale
+     * @param \ezp\Content\Version $base
+     * @return \ezp\Content\Translation
      * @throw InvalidArgumentException if translation in $base does not exist.
      */
     public function addTranslation( Locale $locale, Version $base = null )
@@ -367,10 +329,10 @@ class Content extends AbstractModel
     /**
      * Remove the translation in $locale
      *
-     * @param Locale $locale
+     * @param \ezp\Base\Locale $locale
      * @throw InvalidArgumentException if the main locale is the one in
      *          argument or if there's not translation
-     *          in this locale
+     *          in this locale @todo Use Base exceptions
      */
     public function removeTranslation( Locale $locale )
     {
@@ -390,8 +352,8 @@ class Content extends AbstractModel
     /**
      * Adds a new location to content under an existing one.
      *
-     * @param Location $parentLocation
-     * @return Location
+     * @param \ezp\Content\Location $parentLocation
+     * @return \ezp\Content\Location
      */
     public function addParent( Location $parentLocation )
     {

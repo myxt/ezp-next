@@ -13,7 +13,7 @@ use ezp\Content,
     ezp\Content\Section,
     ezp\Content\Translation,
     ezp\Content\Type,
-    ezp\Content\Type\Field,
+    ezp\Content\Type\FieldDefinition,
     ezp\Base\Locale;
 
 /**
@@ -37,15 +37,14 @@ class ContentTest extends \PHPUnit_Framework_TestCase
 
         // Add some fields
         $fields = array(
-            '\\ezp\\Content\\Type\\Field\\String' => array( 'title', 'ezstring', 'New Article' ),
-            '\\ezp\\Content\\Type\\Field\\Keyword' => array( 'tags', 'ezkeyword', '' )
+            'title' => array( 'ezstring', 'New Article' ),
+            'tags' => array( 'ezkeyword', '' )
         );
-        foreach ( $fields as $className => $data )
+        foreach ( $fields as $identifier => $data )
         {
-            $field = new $className( $this->contentType );
-            $field->identifier = $data[0];
-            $field->fieldTypeString = $data[1];
-            $field->default = $data[2];
+            $field = new FieldDefinition( $this->contentType, $data[0] );
+            $field->identifier = $identifier;
+            $field->defaultValue = $data[1];
             $this->contentType->fields[] = $field;
         }
 
@@ -55,6 +54,7 @@ class ContentTest extends \PHPUnit_Framework_TestCase
 
     /**
      * Test the default Translation internally created with a Content is created
+     * @covers \ezp\Content::__construct
      */
     public function testDefaultContentTranslation()
     {
@@ -68,6 +68,7 @@ class ContentTest extends \PHPUnit_Framework_TestCase
 
     /**
      * @expectedException InvalidArgumentException
+     * @covers \ezp\Content::addTranslation
      */
     public function testContentAddExistingTranslation()
     {
@@ -77,6 +78,7 @@ class ContentTest extends \PHPUnit_Framework_TestCase
 
     /**
      * @expectedException InvalidArgumentException
+     * @covers \ezp\Content::removeTranslation
      */
     public function testContentRemoveUnexistingTranslation()
     {
@@ -86,6 +88,7 @@ class ContentTest extends \PHPUnit_Framework_TestCase
 
     /**
      * @expectedException InvalidArgumentException
+     * @covers \ezp\Content::removeTranslation
      */
     public function testContentRemoveMainLocaleTranslation()
     {
@@ -96,6 +99,7 @@ class ContentTest extends \PHPUnit_Framework_TestCase
     /**
      * Test that Content::removeTranslation() really removes the Translation
      * object
+     * @covers \ezp\Content::removeTranslation
      */
     public function testContentRemoveTranslation()
     {
@@ -110,6 +114,7 @@ class ContentTest extends \PHPUnit_Framework_TestCase
      * - new Translation has the right locale
      * - new Translation has one version
      * - a new version is also added to the Content
+     * @covers \ezp\Content::addTranslation
      */
     public function testContentAddTranslation()
     {
@@ -122,6 +127,7 @@ class ContentTest extends \PHPUnit_Framework_TestCase
 
     /**
      * @expectedException ezp\Base\Exception\InvalidArgumentType
+     * @FIXME Use "@covers"
      */
     public function testLocationWrongClass()
     {
@@ -131,6 +137,7 @@ class ContentTest extends \PHPUnit_Framework_TestCase
 
     /**
      * Test that foreign side of relation is updated for Location -> Content when Location is created
+     * @FIXME Use "@covers"
      */
     public function testContentLocationWhenLocationIsCreated()
     {

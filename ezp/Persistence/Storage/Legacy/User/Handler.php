@@ -11,6 +11,8 @@ namespace ezp\Persistence\Storage\Legacy\User;
 use ezp\Persistence\User,
     ezp\Persistence\User\Handler as BaseUserHandler,
     ezp\Persistence\User\Role,
+    ezp\Persistence\User\RoleUpdateStruct,
+    ezp\Persistence\User\Policy,
     ezp\Persistence\Storage\Legacy\User\Role\Gateway as RoleGateway;
 
 /**
@@ -87,18 +89,24 @@ class Handler implements BaseUserHandler
      */
     public function createRole( Role $role )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->roleGateway->createRole( $role );
+
+        foreach ( $role->policies as $policy )
+        {
+            $this->addPolicy( $role->id, $policy );
+        }
+
+        return $role;
     }
 
     /**
      * Update role
      *
-     * @todo Create a RoleUpdateStruct, which omits the policies
-     * @param Role $role
+     * @param RoleUpdateStruct $role
      */
-    public function updateRole( Role $role )
+    public function updateRole( RoleUpdateStruct $role )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->roleGateway->updateRole( $role );
     }
 
     /**
@@ -108,19 +116,21 @@ class Handler implements BaseUserHandler
      */
     public function deleteRole( $roleId )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->roleGateway->deleteRole( $roleId );
     }
 
     /**
      * Adds a policy to a role
      *
      * @param mixed $roleId
-     * @param mixed $policyId
+     * @param Policy $policy
      * @return void
      */
-    public function addPolicy( $roleId, $policyId )
+    public function addPolicy( $roleId, Policy $policy )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->roleGateway->addPolicy( $roleId, $policy );
+
+        return $policy;
     }
 
     /**
@@ -132,7 +142,7 @@ class Handler implements BaseUserHandler
      */
     public function removePolicy( $roleId, $policyId )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->roleGateway->removePolicy( $roleId, $policyId );
     }
 
     /**
@@ -143,17 +153,36 @@ class Handler implements BaseUserHandler
      */
     public function getPermissions( $userId )
     {
+        // @TODO: Specification of how this works is pending by eZ.
         throw new RuntimeException( '@TODO: Implement' );
     }
 
     /**
+     * Assign role to user with given limitation
+     *
+     * The limitation array may look like:
+     * <code>
+     *  array(
+     *      'Subtree' => array(
+     *          '/1/2/',
+     *          '/1/4/',
+     *      ),
+     *      'Foo' => array( 'Bar' ),
+     *      …
+     *  )
+     * </code>
+     *
+     * Where the keys are the limitation identifiers, and the respective values
+     * are an array of limitation values. The limitation parameter is optional.
+     *
      * @param mixed $userId
      * @param mixed $roleId
      * @param array $limitation
      */
-    public function assignRole( $userId, $roleId, $limitation )
+    public function assignRole( $userId, $roleId, array $limitation = null )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $limitation = $limitation ?: array( '' => array( '' ) );
+        $this->userGateway->assignRole( $userId, $roleId, $limitation );
     }
 
     /**
@@ -162,7 +191,7 @@ class Handler implements BaseUserHandler
      */
     public function removeRole( $userId, $roleId )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->userGateway->removeRole( $userId, $roleId );
     }
 }
 ?>

@@ -17,6 +17,7 @@ use ezp\Persistence\Content\Type\Handler as ContentTypeHandlerInterface,
     ezp\Persistence\Content\Type\Group\CreateStruct as GroupCreateStruct,
     ezp\Persistence\Content\Type\Group\UpdateStruct as GroupUpdateStruct,
     ezp\Persistence\Content\Type\Group,
+    ezp\Base\Exception\NotFound,
     RuntimeException;
 
 /**
@@ -53,7 +54,8 @@ class ContentTypeHandler implements ContentTypeHandlerInterface
      */
     public function createGroup( GroupCreateStruct $group )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $groupArr = (array) $group;
+        return $this->backend->create( 'Content\\Type\\Group', $groupArr );
     }
 
     /**
@@ -61,7 +63,8 @@ class ContentTypeHandler implements ContentTypeHandlerInterface
      */
     public function updateGroup( GroupUpdateStruct $group )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $groupArr = (array) $group;
+        $this->backend->update( 'Content\\Type\\Group', $groupArr['id'], $groupArr );
     }
 
     /**
@@ -69,7 +72,30 @@ class ContentTypeHandler implements ContentTypeHandlerInterface
      */
     public function deleteGroup( $groupId )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->backend->delete( 'Content\\Type\\Group', $groupId );
+
+        // Remove group id from content types
+        $types = $this->backend->find( 'Content\\Type', array( 'groupIds' => $groupId ) );
+        foreach ( $types as $type )
+        {
+            $update = false;
+            foreach ( $type->groupIds as $key => $contentTypeGroupId )
+            {
+                if ( $contentTypeGroupId == $groupId )
+                {
+                    unset( $type->groupIds[$key] );
+                    $update = true;
+                }
+            }
+
+            if ( $update )
+            {
+                // @todo If groupIds is empty, content type and content of that type should be deleted
+                $this->backend->update( 'Content\\Type',
+                                        $type->id,
+                                        array( 'groupIds' => $type->groupIds ) );
+            }
+        }
     }
 
     /**
@@ -77,8 +103,15 @@ class ContentTypeHandler implements ContentTypeHandlerInterface
      */
     public function loadAllGroups()
     {
-        throw new RuntimeException( '@TODO: Implement' );
-        //return $this->backend->find( 'Content\\Type\\Group' );
+        return $this->backend->find( 'Content\\Type\\Group', array() );
+    }
+
+    /**
+     * @see ezp\Persistence\Content\Type\Handler
+     */
+    public function loadGroup( $groupId )
+    {
+        return $this->backend->load( 'Content\\Type\\Group', $groupId );
     }
 
     /**
@@ -86,19 +119,14 @@ class ContentTypeHandler implements ContentTypeHandlerInterface
      */
     public function loadContentTypes( $groupId, $version = 0 )
     {
-        $type = $this->backend->find(
+        return $this->backend->find(
             'Content\\Type',
-            array( 'contentTypeGroupIds' => $groupId, 'version' => $version ),
+            array( 'groupIds' => $groupId, 'version' => $version ),
             array( 'fieldDefinitions' => array(
                 'type' => 'Content\\Type\\FieldDefinition',
                 'match' => array( '_typeId' => 'id',  '_version' => 'version' ) )
             )
         );
-
-        if ( !$type )
-            return null;
-
-        return $type[0];
     }
 
     /**
@@ -190,7 +218,16 @@ class ContentTypeHandler implements ContentTypeHandlerInterface
      */
     public function link( $groupId, $contentTypeId, $version )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $list = $this->backend->find('Content\\Type', array( 'id' => $contentTypeId, 'version' => $version ) );
+        if ( !isset( $list[0] ) )
+            throw new NotFound( 'Content\\Type', "{$contentTypeId}' and version '{$version}" );
+
+        if ( !$this->backend->load('Content\\Type\\Group', $groupId ) )
+            throw new NotFound( 'Content\\Type\\Group', $groupId );
+
+        $this->backend->updateByMatch( 'Content\\Type',
+                               array( 'id' => $contentTypeId, 'version' => $version ),
+                               array( 'groupIds' => array_merge( $list[0]->groupIds, array( $groupId ) ) ) );
     }
 
     /**

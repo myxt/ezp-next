@@ -112,6 +112,23 @@ class MapperTest extends TestCase
         );
     }
 
+    public function testCreateLocationFromContent()
+    {
+        $mapper = new Mapper( $this->getValueConverterRegistryMock() );
+        $location = $mapper->createLocationCreateStruct(
+            $content = $this->getFullContentFixture(),
+            $struct = $this->getCreateStructFixture()
+        );
+
+        $this->assertPropertiesCorrect(
+            array(
+                'contentId'      => $content->id,
+                'contentVersion' => 1,
+            ),
+            $location
+        );
+    }
+
     /**
      * Returns a Content fixture
      *
@@ -126,8 +143,18 @@ class MapperTest extends TestCase
         $struct->typeId          = 23;
         $struct->sectionId       = 42;
         $struct->ownerId         = 13;
-        $struct->versionInfos    = array();
         $struct->locations       = array();
+
+        return $struct;
+    }
+
+    protected function getFullContentFixture()
+    {
+        $struct = $this->getContentFixture();
+
+        $struct->version = new Content\Version( array(
+            'id' => 1,
+        ) );
 
         return $struct;
     }
@@ -175,7 +202,7 @@ class MapperTest extends TestCase
         $convMock = $this->getMock(
             'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter'
         );
-        $convMock->expects( $this->exactly( 9 ) )
+        $convMock->expects( $this->exactly( 6 ) )
             ->method( 'toFieldValue' )
             ->with(
                 $this->isInstanceOf(
@@ -233,7 +260,7 @@ class MapperTest extends TestCase
     protected function getValueConverterRegistryMock()
     {
         return $this->getMock(
-            'ezp\\Persistence\\Storage\\Legacy\\Content\FieldValue\\Converter\\Registry'
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter\\Registry'
         );
     }
 

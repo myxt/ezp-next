@@ -9,7 +9,8 @@
 
 namespace ezp\Persistence\Content\Location;
 use ezp\Persistence\Content\Location,
-    ezp\Persistence\Content\Location\CreateStruct;
+    ezp\Persistence\Content\Location\CreateStruct,
+    ezp\Persistence\Content\Location\UpdateStruct;
 
 /**
  * The Location Handler interface defines operations on Location elements in the storage engine.
@@ -53,6 +54,18 @@ interface Handler
     public function move( $sourceId, $destinationParentId );
 
     /**
+     * Marks the given nodes and all ancestors as modified
+     *
+     * Optionally a time stamp with the modification date may be specified,
+     * otherwise the current time is used.
+     *
+     * @param int|string $locationId
+     * @param int $timeStamp
+     * @return void
+     */
+    public function markSubtreeModified( $locationId, $timeStamp = null );
+
+    /**
      * Sets a location to be hidden, and it self + all children to invisible.
      *
      * @param mixed $id Location ID
@@ -80,13 +93,13 @@ interface Handler
     public function swap( $locationId1, $locationId2 );
 
     /**
-     * Updates an existing location priority.
+     * Updates an existing location.
      *
+     * @param \ezp\Persistence\Content\Location\UpdateStruct $location
      * @param int $locationId
-     * @param int $priority
      * @return boolean
      */
-    public function updatePriority( $locationId, $priority );
+    public function updateLocation( UpdateStruct $location, $locationId );
 
     /**
      * Creates a new location rooted at $parentId.
@@ -98,7 +111,7 @@ interface Handler
     public function createLocation( CreateStruct $location, $parentId );
 
     /**
-     * Removes all Locations under and includin $locationId.
+     * Removes all Locations under and including $locationId.
      *
      * Performs a recursive delete on the location identified by $locationId,
      * including all of its child locations. Content which is not referred to
@@ -123,14 +136,18 @@ interface Handler
     public function trashSubtree( $locationId );
 
     /**
-     * Returns a trashed subtree to normal state.
+     * Returns a trashed location to normal state.
      *
-     * The affected subtree is now again part of matching content queries.
+     * Recreates the originally trashed location in the new position. If no new
+     * position has been specified, it will be tried to re-create the location
+     * at the old position. If this is not possible ( because the old location
+     * does not exist any more) and exception is thrown.
      *
      * @param mixed $locationId
+     * @param mixed $newParentId
      * @return boolean
      */
-    public function untrashSubtree( $locationId );
+    public function untrashLocation( $locationId, $newParentId = null );
 
     /**
      * Set section on all content objects in the subtree
@@ -142,7 +159,9 @@ interface Handler
     public function setSectionForSubtree( $locationId, $sectionId );
 
     /**
-     * Removes a location from its $locationId
+     * Removes a location from its $locationId.
+     * Content which looses its main Location will get the first
+     * of its other Locations assigned as the new main Location.
      *
      * @param mixed $locationId
      */

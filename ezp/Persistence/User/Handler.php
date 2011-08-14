@@ -9,7 +9,9 @@
 
 namespace ezp\Persistence\User;
 use ezp\Persistence\User,
-    ezp\Persistence\User\Role;
+    ezp\Persistence\User\Role,
+    ezp\Persistence\User\RoleUpdateStruct,
+    ezp\Persistence\User\Policy;
 
 /**
  * Storage Engine handler for user module
@@ -53,10 +55,9 @@ interface Handler
     /**
      * Update role
      *
-     * @todo Create a RoleUpdateStruct, which omits the policies
-     * @param Role $role
+     * @param RoleUpdateStruct $role
      */
-    public function updateRole( Role $role );
+    public function updateRole( RoleUpdateStruct $role );
 
     /**
      * Delete the specified role
@@ -69,10 +70,10 @@ interface Handler
      * Adds a policy to a role
      *
      * @param mixed $roleId
-     * @param mixed $policyId
+     * @param Policy $policy
      * @return void
      */
-    public function addPolicy( $roleId, $policyId );
+    public function addPolicy( $roleId, Policy $policy );
 
     /**
      * Removes a policy from a role
@@ -92,11 +93,28 @@ interface Handler
     public function getPermissions( $userId );
 
     /**
+     * Assign role to user with given limitation
+     *
+     * The limitation array may look like:
+     * <code>
+     *  array(
+     *      'Subtree' => array(
+     *          '/1/2/',
+     *          '/1/4/',
+     *      ),
+     *      'Foo' => array( 'Bar' ),
+     *      …
+     *  )
+     * </code>
+     *
+     * Where the keys are the limitation identifiers, and the respective values
+     * are an array of limitation values. The limitation parameter is optional.
+     *
      * @param mixed $userId
      * @param mixed $roleId
      * @param array $limitation
      */
-    public function assignRole( $userId, $roleId, $limitation );
+    public function assignRole( $userId, $roleId, array $limitation = null );
 
     /**
      * @param mixed $userId

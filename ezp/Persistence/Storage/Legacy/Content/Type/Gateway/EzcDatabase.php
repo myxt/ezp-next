@@ -9,6 +9,7 @@
 
 namespace ezp\Persistence\Storage\Legacy\Content\Type\Gateway;
 use ezp\Persistence\Storage\Legacy\Content\Type\Gateway,
+    ezp\Persistence\Storage\Legacy\EzcDbHandler,
     ezp\Persistence\Content\Type,
     ezp\Persistence\Content\Type\FieldDefinition,
     ezp\Persistence\Content\Type\UpdateStruct,
@@ -79,25 +80,93 @@ class EzcDatabase extends Gateway
     /**
      * Zeta Components database handler.
      *
-     * @var ezcDbHandler
+     * @var EzcDbHandler
      */
     protected $dbHandler;
 
     /**
+     * Cache for language mapping information
+     *
+     * @var array
+     */
+    protected $languageMapping;
+
+    /**
      * Creates a new gateway based on $db
      *
-     * @param ezcDbHandler $db
+     * @param EzcDbHandler $db
      */
-    public function __construct( \ezcDbHandler $db )
+    public function __construct( EzcDbHandler $db )
     {
         $this->dbHandler = $db;
+    }
+
+    /**
+     * Get language mapping
+     *
+     * Get mapping of languages to their respective IDs in the database.
+     *
+     * @return array
+     */
+    protected function getLanguageMapping()
+    {
+        if ( $this->languageMapping )
+        {
+            return $this->languageMapping;
+        }
+
+        $query = $this->dbHandler->createSelectQuery();
+        $query
+            ->select(
+                $this->dbHandler->quoteColumn( 'id' ),
+                $this->dbHandler->quoteColumn( 'locale' )
+            )->from(
+                $this->dbHandler->quoteTable( 'ezcontent_language' )
+            );
+
+        $statement = $query->prepare();
+        $statement->execute();
+
+        $this->languageMapping = array();
+        while ( $row = $statement->fetch( \PDO::FETCH_ASSOC ) )
+        {
+            $this->languageMapping[$row['locale']] = (int) $row['id'];
+        }
+
+        return $this->languageMapping;
+    }
+
+    /**
+     * Get language mask
+     *
+     * Return the language mask for a common array of language specifications
+     * for a type name or description.
+     *
+     * @param array $languages
+     * @return int
+     */
+    protected function getLanguageMask( array $languages )
+    {
+        $mask    = 0;
+        if ( isset( $languages['always-available'] ) )
+        {
+            $mask |= $languages['always-available'] ? 1 : 0;
+            unset( $languages['always-available'] );
+        }
+
+        $mapping = $this->getLanguageMapping();
+        foreach ( $languages as $language => $value )
+        {
+            $mask |= $mapping[$language];
+        }
+
+        return $mask;
     }
 
     /**
      * Inserts the given $group.
      *
      * @return mixed Group ID
-     * @todo This might lead to race conditions for insert IDs.
      * @todo PDO->lastInsertId() might require a seq name (Oracle?).
      * @todo Isn't $identifier more the "name"?
      */
@@ -105,21 +174,21 @@ class EzcDatabase extends Gateway
     {
         $q = $this->dbHandler->createInsertQuery();
         $q->insertInto(
-            $this->dbHandler->quoteIdentifier( 'ezcontentclassgroup' )
+            $this->dbHandler->quoteTable( 'ezcontentclassgroup' )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'created' ),
+            $this->dbHandler->quoteColumn( 'created' ),
             $q->bindValue( $group->created, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'creator_id' ),
+            $this->dbHandler->quoteColumn( 'creator_id' ),
             $q->bindValue( $group->creatorId, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'modified' ),
+            $this->dbHandler->quoteColumn( 'modified' ),
             $q->bindValue( $group->modified, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'modifier_id' ),
+            $this->dbHandler->quoteColumn( 'modifier_id' ),
             $q->bindValue( $group->modifierId, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'name' ),
+            $this->dbHandler->quoteColumn( 'name' ),
             $q->bindValue( $group->name[$group->name['always-available']] )
         );
         $stmt = $q->prepare();
@@ -138,15 +207,15 @@ class EzcDatabase extends Gateway
     {
         $q = $this->dbHandler->createUpdateQuery();
         $q->update(
-            $this->dbHandler->quoteIdentifier( 'ezcontentclassgroup' )
+            $this->dbHandler->quoteColumn( 'ezcontentclassgroup' )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'modified' ),
+            $this->dbHandler->quoteColumn( 'modified' ),
             $q->bindValue( $group->modified, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'modifier_id' ),
+            $this->dbHandler->quoteColumn( 'modifier_id' ),
             $q->bindValue( $group->modifierId, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'name' ),
+            $this->dbHandler->quoteColumn( 'name' ),
             $q->bindValue( $group->name[$group->name['always-available']] )
         );
 
@@ -154,34 +223,59 @@ class EzcDatabase extends Gateway
         $stmt->execute();
     }
 
+    protected function insertTypeNameData( Type $type )
+    {
+        $alwaysAvailable = null;
+        $languages       = $type->name;
+        $mapping         = $this->getLanguageMapping();
+        if ( isset( $languages['always-available'] ) )
+        {
+            $alwaysAvailable = $languages['always-available'];
+            unset( $languages['always-available'] );
+        }
+
+        foreach ( $languages as $language => $name )
+        {
+            $query = $this->dbHandler->createInsertQuery();
+            $query
+                ->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass_name' ) )
+                ->set( 'contentclass_id', $query->bindValue( $type->id ) )
+                ->set( 'contentclass_version', $query->bindValue( $type->version ) )
+                ->set( 'language_id', $query->bindValue( $mapping[$language] | ( $alwaysAvailable === $language ? 1 : 0 ) ) )
+                ->set( 'language_locale', $query->bindValue( $language ) )
+                ->set( 'name', $query->bindValue( $name ) );
+            $query->prepare()->execute();
+        }
+    }
+
     /**
      * Inserts a new conten type.
      *
      * @param Type $createStruct
      * @return mixed Type ID
-     * @todo This might lead to race conditions for insert IDs.
      * @todo PDO->lastInsertId() might require a seq name (Oracle?).
      */
     public function insertType( Type $type )
     {
         $q = $this->dbHandler->createInsertQuery();
-        $q->insertInto( 'ezcontentclass' );
+        $q->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass' ) );
         $q->set(
-            $this->dbHandler->quoteIdentifier( 'version' ),
+            $this->dbHandler->quoteColumn( 'version' ),
             $q->bindValue( $type->version, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'created' ),
+            $this->dbHandler->quoteColumn( 'created' ),
             $q->bindValue( $type->created, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'creator_id' ),
+            $this->dbHandler->quoteColumn( 'creator_id' ),
             $q->bindValue( $type->creatorId, null, \PDO::PARAM_INT )
         );
         $this->setCommonTypeColumns( $q, $type );
+        $q->prepare()->execute();
 
-        $stmt = $q->prepare();
-        $stmt->execute();
+        $type->id = $this->dbHandler->lastInsertId();
+        $this->insertTypeNameData( $type );
 
-        return $this->dbHandler->lastInsertId();
+        return $type->id;
     }
 
     /**
@@ -194,34 +288,37 @@ class EzcDatabase extends Gateway
     protected function setCommonTypeColumns( \ezcQuery $q, $type )
     {
         $q->set(
-            $this->dbHandler->quoteIdentifier( 'serialized_name_list' ),
+            $this->dbHandler->quoteColumn( 'serialized_name_list' ),
             $q->bindValue( serialize( $type->name ) )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'serialized_description_list' ),
+            $this->dbHandler->quoteColumn( 'serialized_description_list' ),
             $q->bindValue( serialize( $type->description ) )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'identifier' ),
+            $this->dbHandler->quoteColumn( 'identifier' ),
             $q->bindValue( $type->identifier )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'modified' ),
+            $this->dbHandler->quoteColumn( 'modified' ),
             $q->bindValue( $type->modified, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'modifier_id' ),
+            $this->dbHandler->quoteColumn( 'modifier_id' ),
             $q->bindValue( $type->modifierId, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'remote_id' ),
+            $this->dbHandler->quoteColumn( 'remote_id' ),
             $q->bindValue( $type->remoteId )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'url_alias_name' ),
+            $this->dbHandler->quoteColumn( 'url_alias_name' ),
             $q->bindValue( $type->urlAliasSchema )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'contentobject_name' ),
+            $this->dbHandler->quoteColumn( 'contentobject_name' ),
             $q->bindValue( $type->nameSchema )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'is_container' ),
+            $this->dbHandler->quoteColumn( 'is_container' ),
             $q->bindValue( $type->isContainer ? 1 : 0, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'initial_language_id' ),
+            $this->dbHandler->quoteColumn( 'language_mask' ),
+            $q->bindValue( $this->getLanguageMask( $type->name ), null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'initial_language_id' ),
             $q->bindValue( $type->initialLanguageId, null, \PDO::PARAM_INT )
         );
     }
@@ -239,18 +336,18 @@ class EzcDatabase extends Gateway
         $group = $this->loadGroupData( $groupId );
 
         $q = $this->dbHandler->createInsertQuery();
-        $q->insertInto( 'ezcontentclass_classgroup' )
+        $q->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' ) )
             ->set(
-                $this->dbHandler->quoteIdentifier( 'contentclass_id' ),
+                $this->dbHandler->quoteColumn( 'contentclass_id' ),
                 $q->bindValue( $typeId, null, \PDO::PARAM_INT )
             )->set(
-                $this->dbHandler->quoteIdentifier( 'contentclass_version' ),
+                $this->dbHandler->quoteColumn( 'contentclass_version' ),
                 $q->bindValue( $version, null, \PDO::PARAM_INT )
             )->set(
-                $this->dbHandler->quoteIdentifier( 'group_id' ),
+                $this->dbHandler->quoteColumn( 'group_id' ),
                 $q->bindValue( $groupId, null, \PDO::PARAM_INT )
             )->set(
-                $this->dbHandler->quoteIdentifier( 'group_name' ),
+                $this->dbHandler->quoteColumn( 'group_name' ),
                 $q->bindValue( $group['name'] )
         );
 
@@ -269,19 +366,19 @@ class EzcDatabase extends Gateway
     public function deleteGroupAssignement( $groupId, $typeId, $version )
     {
         $q = $this->dbHandler->createDeleteQuery();
-        $q->deleteFrom( 'ezcontentclass_classgroup' )
+        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' ) )
             ->where(
                 $q->expr->lAnd(
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'contentclass_id' ),
+                        $this->dbHandler->quoteColumn( 'contentclass_id' ),
                         $q->bindValue( $typeId, null, \PDO::PARAM_INT )
                     ),
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'contentclass_version' ),
+                        $this->dbHandler->quoteColumn( 'contentclass_version' ),
                         $q->bindValue( $version, null, \PDO::PARAM_INT )
                     ),
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'group_id' ),
+                        $this->dbHandler->quoteColumn( 'group_id' ),
                         $q->bindValue( $groupId, null, \PDO::PARAM_INT )
                     )
                 )
@@ -300,17 +397,17 @@ class EzcDatabase extends Gateway
     {
         $q = $this->dbHandler->createSelectQuery();
         $q->select(
-            $this->dbHandler->quoteIdentifier( 'created' ),
-            $this->dbHandler->quoteIdentifier( 'creator_id' ),
-            $this->dbHandler->quoteIdentifier( 'id' ),
-            $this->dbHandler->quoteIdentifier( 'modified' ),
-            $this->dbHandler->quoteIdentifier( 'modifier_id' ),
-            $this->dbHandler->quoteIdentifier( 'name' )
+            $this->dbHandler->quoteColumn( 'created' ),
+            $this->dbHandler->quoteColumn( 'creator_id' ),
+            $this->dbHandler->quoteColumn( 'id' ),
+            $this->dbHandler->quoteColumn( 'modified' ),
+            $this->dbHandler->quoteColumn( 'modifier_id' ),
+            $this->dbHandler->quoteColumn( 'name' )
         )->from(
-            $this->dbHandler->quoteIdentifier( 'ezcontentclassgroup' )
+            $this->dbHandler->quoteTable( 'ezcontentclassgroup' )
         )->where(
             $q->expr->eq(
-                $this->dbHandler->quoteIdentifier( 'id' ),
+                $this->dbHandler->quoteColumn( 'id' ),
                 $q->bindValue( $groupId, null, \PDO::PARAM_INT )
             )
         );
@@ -328,18 +425,17 @@ class EzcDatabase extends Gateway
      * @param FieldDefinition $fieldDefinition
      * @return mixed Field definition ID
      * @todo What about fieldTypeConstraints and defaultValue?
-     * @todo This might lead to race conditions for insert IDs.
      * @todo PDO->lastInsertId() might require a seq name (Oracle?).
      */
     public function insertFieldDefinition( $typeId, $version, FieldDefinition $fieldDefinition )
     {
         $q = $this->dbHandler->createInsertQuery();
-        $q->insertInto( 'ezcontentclass_attribute' );
+        $q->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass_attribute' ) );
         $q->set(
-            $this->dbHandler->quoteIdentifier( 'contentclass_id' ),
+            $this->dbHandler->quoteColumn( 'contentclass_id' ),
             $q->bindValue( $typeId, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'version' ),
+            $this->dbHandler->quoteColumn( 'version' ),
             $q->bindValue( $version, null, \PDO::PARAM_INT )
         );
         $this->setCommonFieldColumns( $q, $fieldDefinition );
@@ -360,31 +456,31 @@ class EzcDatabase extends Gateway
     protected function setCommonFieldColumns( \ezcQuery $q, FieldDefinition $fieldDefinition )
     {
         $q->set(
-            $this->dbHandler->quoteIdentifier( 'serialized_name_list' ),
+            $this->dbHandler->quoteColumn( 'serialized_name_list' ),
             $q->bindValue( serialize( $fieldDefinition->name ) )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'serialized_description_list' ),
+            $this->dbHandler->quoteColumn( 'serialized_description_list' ),
             $q->bindValue( serialize( $fieldDefinition->description ) )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'identifier' ),
+            $this->dbHandler->quoteColumn( 'identifier' ),
             $q->bindValue( $fieldDefinition->identifier )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'category' ),
+            $this->dbHandler->quoteColumn( 'category' ),
             $q->bindValue( $fieldDefinition->fieldGroup )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'placement' ),
+            $this->dbHandler->quoteColumn( 'placement' ),
             $q->bindValue( $fieldDefinition->position, null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'data_type_string' ),
+            $this->dbHandler->quoteColumn( 'data_type_string' ),
             $q->bindValue( $fieldDefinition->fieldType )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'can_translate' ),
+            $this->dbHandler->quoteColumn( 'can_translate' ),
             $q->bindValue( ( $fieldDefinition->isTranslatable ? 1 : 0 ), null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'is_required' ),
+            $this->dbHandler->quoteColumn( 'is_required' ),
             $q->bindValue( ( $fieldDefinition->isRequired ? 1 : 0 ), null, \PDO::PARAM_INT )
         )->set(
-            $this->dbHandler->quoteIdentifier( 'is_information_collector' ),
+            $this->dbHandler->quoteColumn( 'is_information_collector' ),
             $q->bindValue( ( $fieldDefinition->isInfoCollector ? 1 : 0 ), null, \PDO::PARAM_INT )
         /*
          * fieldTypeConstraints?
@@ -394,7 +490,7 @@ class EzcDatabase extends Gateway
         */
         )->set(
             // @todo: Correct?
-            $this->dbHandler->quoteIdentifier( 'serialized_data_text' ),
+            $this->dbHandler->quoteColumn( 'serialized_data_text' ),
             $q->bindValue( serialize( $fieldDefinition->defaultValue ) )
         );
     }
@@ -411,20 +507,20 @@ class EzcDatabase extends Gateway
     {
         $q = $this->dbHandler->createDeleteQuery();
         $q->deleteFrom(
-            $this->dbHandler->quoteIdentifier( 'ezcontentclass_attribute' )
+            $this->dbHandler->quoteTable( 'ezcontentclass_attribute' )
         )->where(
             $q->expr->lAnd(
                 $q->expr->eq(
-                    $this->dbHandler->quoteIdentifier( 'id' ),
+                    $this->dbHandler->quoteColumn( 'id' ),
                     $q->bindValue( $fieldDefinitionId, null, \PDO::PARAM_INT )
                 ),
                 $q->expr->eq(
-                    $this->dbHandler->quoteIdentifier( 'version' ),
+                    $this->dbHandler->quoteColumn( 'version' ),
                     $q->bindValue( $version, null, \PDO::PARAM_INT )
                 ),
                 // FIXME: Actually not needed
                 $q->expr->eq(
-                    $this->dbHandler->quoteIdentifier( 'contentclass_id' ),
+                    $this->dbHandler->quoteColumn( 'contentclass_id' ),
                     $q->bindValue( $typeId, null, \PDO::PARAM_INT )
                 )
             )
@@ -445,19 +541,21 @@ class EzcDatabase extends Gateway
     public function updateFieldDefinition( $typeId, $version, FieldDefinition $fieldDefinition )
     {
         $q = $this->dbHandler->createUpdateQuery();
-        $q->update( 'ezcontentclass_attribute' )
-            ->where(
+        $q
+            ->update(
+                $this->dbHandler->quoteTable( 'ezcontentclass_attribute' )
+            )->where(
                 $q->expr->eq(
-                    $this->dbHandler->quoteIdentifier( 'id' ),
+                    $this->dbHandler->quoteColumn( 'id' ),
                     $q->bindValue( $fieldDefinition->id, null, \PDO::PARAM_INT )
                 ),
                 $q->expr->eq(
-                    $this->dbHandler->quoteIdentifier( 'version' ),
+                    $this->dbHandler->quoteColumn( 'version' ),
                     $q->bindValue( $version, null, \PDO::PARAM_INT )
                 ),
                 // FIXME: Actually not needed
                 $q->expr->eq(
-                    $this->dbHandler->quoteIdentifier( 'contentclass_id' ),
+                    $this->dbHandler->quoteColumn( 'contentclass_id' ),
                     $q->bindValue( $typeId, null, \PDO::PARAM_INT )
                 )
             );
@@ -478,18 +576,18 @@ class EzcDatabase extends Gateway
     public function updateType( $typeId, $version, UpdateStruct $updateStruct )
     {
         $q = $this->dbHandler->createUpdateQuery();
-        $q->update( $this->dbHandler->quoteIdentifier( 'ezcontentclass' ) );
+        $q->update( $this->dbHandler->quoteTable( 'ezcontentclass' ) );
 
         $this->setCommonTypeColumns( $q, $updateStruct );
 
         $q->where(
             $q->expr->lAnd(
                 $q->expr->eq(
-                    $this->dbHandler->quoteIdentifier( 'id' ),
+                    $this->dbHandler->quoteColumn( 'id' ),
                     $q->bindValue( $typeId, null, \PDO::PARAM_INT )
                 ),
                 $q->expr->eq(
-                    $this->dbHandler->quoteIdentifier( 'version' ),
+                    $this->dbHandler->quoteColumn( 'version' ),
                     $q->bindValue( $version, null, \PDO::PARAM_INT )
                 )
             )
@@ -513,70 +611,70 @@ class EzcDatabase extends Gateway
         $this->selectColumns( $q, 'ezcontentclass' );
         $this->selectColumns( $q, 'ezcontentclass_attribute' );
         $q->select(
-            $this->createTableColumnAlias(
+            $this->dbHandler->aliasedColumn(
                 $q,
-                'ezcontentclass_classgroup',
-                'group_id'
+                'group_id',
+                'ezcontentclass_classgroup'
             )
         );
         $q->from(
-            $this->dbHandler->quoteIdentifier( 'ezcontentclass' )
+            $this->dbHandler->quoteTable( 'ezcontentclass' )
         )->leftJoin(
-            $this->dbHandler->quoteIdentifier( 'ezcontentclass_attribute' ),
+            $this->dbHandler->quoteTable( 'ezcontentclass_attribute' ),
             $q->expr->lAnd(
                 $q->expr->eq(
-                    $this->qualifiedIdentifier(
-                        'ezcontentclass',
-                        'id'
+                    $this->dbHandler->quoteColumn(
+                        'id',
+                        'ezcontentclass'
                     ),
-                    $this->qualifiedIdentifier(
-                        'ezcontentclass_attribute',
-                        'contentclass_id'
+                    $this->dbHandler->quoteColumn(
+                        'contentclass_id',
+                        'ezcontentclass_attribute'
                     )
                 ),
                 $q->expr->eq(
-                    $this->qualifiedIdentifier(
-                        'ezcontentclass',
-                        'version'
+                    $this->dbHandler->quoteColumn(
+                        'version',
+                        'ezcontentclass'
                     ),
-                    $this->qualifiedIdentifier(
-                        'ezcontentclass_attribute',
-                        'version'
+                    $this->dbHandler->quoteColumn(
+                        'version',
+                        'ezcontentclass_attribute'
                     )
                 )
             )
         )->leftJoin(
-            $this->dbHandler->quoteIdentifier( 'ezcontentclass_classgroup' ),
+            $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' ),
             $q->expr->lAnd(
                 $q->expr->eq(
-                    $this->qualifiedIdentifier(
-                        'ezcontentclass',
-                        'id'
+                    $this->dbHandler->quoteColumn(
+                        'id',
+                        'ezcontentclass'
                     ),
-                    $this->qualifiedIdentifier(
-                        'ezcontentclass_classgroup',
-                        'contentclass_id'
+                    $this->dbHandler->quoteColumn(
+                        'contentclass_id',
+                        'ezcontentclass_classgroup'
                     )
                 ),
                 $q->expr->eq(
-                    $this->qualifiedIdentifier(
-                        'ezcontentclass',
-                        'version'
+                    $this->dbHandler->quoteColumn(
+                        'version',
+                        'ezcontentclass'
                     ),
-                    $this->qualifiedIdentifier(
-                        'ezcontentclass_classgroup',
-                        'contentclass_version'
+                    $this->dbHandler->quoteColumn(
+                        'contentclass_version',
+                        'ezcontentclass_classgroup'
                     )
                 )
             )
         )->where(
             $q->expr->lAnd(
                 $q->expr->eq(
-                    $this->qualifiedIdentifier( 'ezcontentclass', 'id' ),
+                    $this->dbHandler->quoteColumn( 'id', 'ezcontentclass' ),
                     $q->bindValue( $typeId )
                 ),
                 $q->expr->eq(
-                    $this->qualifiedIdentifier( 'ezcontentclass', 'version' ),
+                    $this->dbHandler->quoteColumn( 'version', 'ezcontentclass' ),
                     $q->bindValue( $version )
                 )
             )
@@ -596,15 +694,15 @@ class EzcDatabase extends Gateway
     public function deleteFieldDefinitionsForType( $typeId, $version )
     {
         $q = $this->dbHandler->createDeleteQuery();
-        $q->deleteFrom( 'ezcontentclass_attribute' )
+        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclass_attribute' ) )
             ->where(
                 $q->expr->lAnd(
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'contentclass_id' ),
+                        $this->dbHandler->quoteColumn( 'contentclass_id' ),
                         $q->bindValue( $typeId, null, \PDO::PARAM_INT )
                     ),
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'version' ),
+                        $this->dbHandler->quoteColumn( 'version' ),
                         $q->bindValue( $version, null, \PDO::PARAM_INT )
                     )
                 )
@@ -624,15 +722,15 @@ class EzcDatabase extends Gateway
     public function deleteType( $typeId, $version )
     {
         $q = $this->dbHandler->createDeleteQuery();
-        $q->deleteFrom( 'ezcontentclass' )
+        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclass' ) )
             ->where(
                 $q->expr->lAnd(
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'id' ),
+                        $this->dbHandler->quoteColumn( 'id' ),
                         $q->bindValue( $typeId, null, \PDO::PARAM_INT )
                     ),
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'version' ),
+                        $this->dbHandler->quoteColumn( 'version' ),
                         $q->bindValue( $version, null, \PDO::PARAM_INT )
                     )
                 )
@@ -650,15 +748,15 @@ class EzcDatabase extends Gateway
     public function deleteGroupAssignementsForType( $typeId, $version )
     {
         $q = $this->dbHandler->createDeleteQuery();
-        $q->deleteFrom( 'ezcontentclass_classgroup' )
+        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' ) )
             ->where(
                 $q->expr->lAnd(
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'contentclass_id' ),
+                        $this->dbHandler->quoteColumn( 'contentclass_id' ),
                         $q->bindValue( $typeId, null, \PDO::PARAM_INT )
                     ),
                     $q->expr->eq(
-                        $this->dbHandler->quoteIdentifier( 'contentclass_version' ),
+                        $this->dbHandler->quoteColumn( 'contentclass_version' ),
                         $q->bindValue( $version, null, \PDO::PARAM_INT )
                     )
                 )
@@ -678,46 +776,8 @@ class EzcDatabase extends Gateway
         foreach ( $this->columns[$tableName] as $col )
         {
             $q->select(
-                $this->createTableColumnAlias( $q, $tableName, $col )
+                $this->dbHandler->aliasedColumn( $q, $col, $tableName )
             );
         }
-    }
-
-    /**
-     * Creates an alias for $tableName, $columnName in $q.
-     *
-     * @param ezcDbQuery $q
-     * @param string $tableName
-     * @param string $columnName
-     * @return string
-     */
-    protected function createTableColumnAlias( \ezcQuerySelect $q, $tableName, $columnName )
-    {
-        return $q->alias(
-            $this->qualifiedIdentifier( $tableName, $columnName ),
-            $this->dbHandler->quoteIdentifier(
-                sprintf(
-                    '%s_%s',
-                    $tableName,
-                    $columnName
-                )
-            )
-        );
-    }
-
-    /**
-     * Returns a qualified identifier for $column in $table.
-     *
-     * @param string $table
-     * @param string $column
-     * @return string
-     */
-    protected function qualifiedIdentifier( $table, $column )
-    {
-        return sprintf(
-            '%s.%s',
-            $this->dbHandler->quoteIdentifier( $table ),
-            $this->dbHandler->quoteIdentifier( $column )
-        );
     }
 }

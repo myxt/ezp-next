@@ -32,6 +32,13 @@ class Handler implements BaseContentHandler
     protected $contentGateway;
 
     /**
+     * Location handler.
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Location\Handler
+     */
+    protected $locationHandler;
+
+    /**
      * Mapper.
      *
      * @var Mapper
@@ -52,11 +59,13 @@ class Handler implements BaseContentHandler
      */
     public function __construct(
         Gateway $contentGateway,
+        Location\Handler $locationHandler,
         Mapper $mapper,
         StorageRegistry $storageRegistry
     )
     {
         $this->contentGateway  = $contentGateway;
+        $this->locationHandler = $locationHandler;
         $this->mapper          = $mapper;
         $this->storageRegistry = $storageRegistry;
     }
@@ -71,8 +80,6 @@ class Handler implements BaseContentHandler
      *
      * @param \ezp\Persistence\Content\CreateStruct $struct Content creation struct.
      * @return \ezp\Persistence\Content Content value object
-     * @todo Take care of initial locations!
-     * @todo Method too complex, refactor!
      */
     public function create( CreateStruct $struct )
     {
@@ -88,7 +95,7 @@ class Handler implements BaseContentHandler
         );
 
         // TODO: Maybe it makes sense to introduce a dedicated
-        // ContentFieldHandler for the legacy storage? Should be checked later, 
+        // ContentFieldHandler for the legacy storage? Should be checked later,
         // if this is possible and sensible
         foreach ( $struct->fields as $field )
         {
@@ -103,7 +110,15 @@ class Handler implements BaseContentHandler
             $version->fields[] = $field;
         }
 
-        $content->versionInfos = array( $version );
+        $content->version = $version;
+
+        foreach ( $struct->parentLocations as $location )
+        {
+            $this->locationHandler->createLocation(
+                $this->mapper->createLocationCreateStruct( $content, $struct ),
+                $location
+            );
+        }
 
         return $content;
     }
@@ -123,44 +138,37 @@ class Handler implements BaseContentHandler
         throw new Exception( "Not implemented yet." );
     }
 
+
     /**
      * Returns the raw data of a content object identified by $id, in a struct.
      *
-     * @param int $id
+     * A version to load must be specified. If you want to load the current
+     * version of a content object use SearchHandler::findSingle() with the
+     * ContentId criterion.
+     *
+     * Optionally a translation filter may be specified. If specified only the
+     * translations with the listed language codes will be retrieved. If not,
+     * all translations will be retrieved.
+     *
+     * @param int|string $id
+     * @param int|string $version
+     * @param string[] $translations
      * @return \ezp\Persistence\Content Content value object
      */
-    public function load( $id )
+    public function load( $id, $version, $translations = null )
     {
-        throw new Exception( "Not implemented yet." );
-    }
+        $rows = $this->contentGateway->load( $id, $version );
 
-    /**
-     * Returns a list of object satisfying the $criterion.
-     *
-     * @param Criterion $criterion
-     * @param int $offset
-     * @param int|null $limit
-     * @param $sort
-     * @return array(ezp\Persistence\Content) Content value object.
-     */
-    public function find( Criterion $criterion, $offset = 0, $limit = null, $sort = null )
-    {
-        throw new Exception( "Not implemented yet." );
-    }
+        if ( !count( $rows ) )
+        {
+            // @TODO: Use proper exception here.
+            throw new \RuntimeException( 'Content object not found.' );
+        }
 
-    /**
-     * Returns a single Content object found.
-     *
-     * Performs a {@link find()} query to find a single object. You need to
-     * ensure, that your $criterion ensure that only a single object can be
-     * retrieved.
-     *
-     * @param Criterion $criterion
-     * @return \ezp\Persistence\Content
-     */
-    public function findSingle( Criterion $criterion )
-    {
-        throw new Exception( "Not implemented yet." );
+        // @TODO: Handle external field data.
+
+        $contentObjects = $this->mapper->extractContentFromRows( $rows );
+        return $contentObjects[0];
     }
 
     /**
@@ -242,21 +250,6 @@ class Handler implements BaseContentHandler
      * @return array(Version)
      */
     public function listVersions( $contentId )
-    {
-        throw new Exception( "Not implemented yet." );
-    }
-
-    /**
-     * Fetch a content value object containing the values of the translation for $languageCode.
-     *
-     * This method might use field filters, if they are designed and available
-     * at a later point in time.
-     *
-     * @param int $contentId
-     * @param string $languageCode
-     * @return \ezp\Persistence\Content\Content
-     */
-    public function fetchTranslation( $contentId, $languageCode )
     {
         throw new Exception( "Not implemented yet." );
     }

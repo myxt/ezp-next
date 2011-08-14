@@ -39,24 +39,26 @@ class QueryBuilderTest extends \PHPUnit_Framework_TestCase
 
     public static function providerForTestCriterionGetter()
     {
+        $fieldIdentifier = new Criterion\FieldIdentifierStruct( 'testtype', 'testfield' );
+
         return array(
             array( 'contentId', 'in', array( array( 1, 2 )  ) ),
             array( 'contentId', 'eq', array( 1 ) ),
 
-            array( 'contentType', 'in', array( array( 1, 2 ) ) ),
-            array( 'contentType', 'eq', array( 'article' ) ),
+            array( 'contentTypeId', 'in', array( array( 1, 2 ) ) ),
+            array( 'contentTypeId', 'eq', array( 'article' ) ),
 
-            array( 'contentTypeGroup', 'in', array( array( 1, 2 ) ) ),
-            array( 'contentTypeGroup', 'eq', array( 'content' ) ),
+            array( 'contentTypeGroupId', 'in', array( array( 1, 2 ) ) ),
+            array( 'contentTypeGroupId', 'eq', array( 'content' ) ),
 
-            array( 'field', 'eq', array( 'testfield', 'my test' ) ),
-            array( 'field', 'like', array( 'testfield', 'my test*' ) ),
-            array( 'field', 'in', array( 'testfield', array( 'a', 'b', 'c' ) ) ),
-            array( 'field', 'gt', array( 'testfield', 1 ) ),
-            array( 'field', 'gte', array( 'testfield', 1 ) ),
-            array( 'field', 'lt', array( 'testfield', 1 ) ),
-            array( 'field', 'lte', array( 'testfield', 1 ) ),
-            array( 'field', 'between', array( 'testfield', 5, 10 ) ),
+            array( 'field', 'eq', array( $fieldIdentifier, 'testfield', 'my test' ) ),
+            array( 'field', 'like', array( $fieldIdentifier, 'my test*' ) ),
+            array( 'field', 'in', array( $fieldIdentifier, array( 'a', 'b', 'c' ) ) ),
+            array( 'field', 'gt', array( $fieldIdentifier, 1 ) ),
+            array( 'field', 'gte', array( $fieldIdentifier, 1 ) ),
+            array( 'field', 'lt', array( $fieldIdentifier, 1 ) ),
+            array( 'field', 'lte', array( $fieldIdentifier, 1 ) ),
+            array( 'field', 'between', array( $fieldIdentifier, 5, 10 ) ),
 
             array( 'fullText', 'like', array( 'testvalue%' ) ),
 
@@ -84,11 +86,11 @@ class QueryBuilderTest extends \PHPUnit_Framework_TestCase
             array( 'remoteId', 'in', array( array( 1, 2 ) ) ),
             array( 'remoteId', 'eq', array( 1 ) ),
 
-            array( 'section', 'in', array( array( 1, 2 ) ) ),
-            array( 'section', 'eq', array( 1 ) ),
+            array( 'sectionId', 'in', array( array( 1, 2 ) ) ),
+            array( 'sectionId', 'eq', array( 1 ) ),
 
-            array( 'subtree', 'in', array( array( 1, 2 ) ) ),
-            array( 'subtree', 'eq', array( 1 ) ),
+            array( 'subtreeId', 'in', array( array( 1, 2 ) ) ),
+            array( 'subtreeId', 'eq', array( 1 ) ),
 
             array( 'urlAlias', 'in', array( array( '/articles/*', '/blog/*' ) ) ),
             array( 'urlAlias', 'eq', array( '/homepage' ) ),
@@ -104,7 +106,7 @@ class QueryBuilderTest extends \PHPUnit_Framework_TestCase
         $criteria = array();
         for ( $i = 0; $i < $criteriaCount; $i++ )
         {
-            $criteria[] = $this->qb->field->eq( 'title', md5( time() ) );
+            $criteria[] = $this->qb->field->eq( new Criterion\FieldIdentifierStruct( 'article', 'title' ), md5( time() ) );
         }
 
         $criterion = call_user_func_array( array( $this->qb, $method ), $criteria );

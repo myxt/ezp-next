@@ -54,33 +54,20 @@ interface Handler
     /**
      * Returns the raw data of a content object identified by $id, in a struct.
      *
-     * @param int $id
+     * A version to load must be specified. If you want to load the current
+     * version of a content object use SearchHandler::findSingle() with the
+     * ContentId criterion.
+     *
+     * Optionally a translation filter may be specified. If specified only the
+     * translations with the listed language codes will be retrieved. If not,
+     * all translations will be retrieved.
+     *
+     * @param int|string $id
+     * @param int|string $version
+     * @param string[] $translations
      * @return \ezp\Persistence\Content Content value object
      */
-    public function load( $id );
-
-    /**
-     * Returns a list of object satisfying the $criterion.
-     *
-     * @param AbstractCriterion $criterion
-     * @param int $offset
-     * @param int|null $limit
-     * @param $sort
-     * @return array(ezp\Persistence\Content) Content value object.
-     */
-    public function find( AbstractCriterion $criterion, $offset = 0, $limit = null, $sort = null );
-
-    /**
-     * Returns a single Content object found.
-     *
-     * Performs a {@link find()} query to find a single object. You need to
-     * ensure, that your $criterion ensure that only a single object can be
-     * retrieved.
-     *
-     * @param AbstractCriterion $criterion
-     * @return \ezp\Persistence\Content
-     */
-    public function findSingle( AbstractCriterion $criterion );
+    public function load( $id, $version, $translations = null );
 
     /**
      * Sets the state of object identified by $contentId and $version to $state.
@@ -131,8 +118,8 @@ interface Handler
     /**
      * Deletes all versions and fields, all locations (subtree), and all relations.
      *
-     * Removes the relations, but not the related objects. Alle subtrees of the
-     * assigned nodes of this content objects are removed (recursivley).
+     * Removes the relations, but not the related objects. All subtrees of the
+     * assigned nodes of this content objects are removed (recursively).
      *
      * @param int $contentId
      * @return boolean
@@ -146,17 +133,5 @@ interface Handler
      * @return array(RestrictedVersion)
      */
     public function listVersions( $contentId );
-
-    /**
-     * Fetch a content value object containing the values of the translation for $languageCode.
-     *
-     * This method might use field filters, if they are designed and available
-     * at a later point in time.
-     *
-     * @param int $contentId
-     * @param string $languageCode
-     * @return \ezp\Persistence\Content\Content
-     */
-    public function fetchTranslation( $contentId, $languageCode );
 }
 ?>

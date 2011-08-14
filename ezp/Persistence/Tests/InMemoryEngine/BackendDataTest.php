@@ -10,6 +10,7 @@
 namespace ezp\Persistence\Tests\InMemoryEngine;
 use PHPUnit_Framework_TestCase,
     ReflectionObject,
+    ezp\Base\Exception\NotFound,
     ezp\Persistence\Content,
     ezp\Persistence\Content\Location;
 
@@ -76,6 +77,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      *
      * @dataProvider providerForFindEmpty
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
      */
     public function testFindEmpty( $searchData )
     {
@@ -107,6 +109,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      *
      * @dataProvider providerForFind
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
      */
     public function testFind( $searchData, $result )
     {
@@ -189,13 +192,34 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
     }
 
     /**
+     * Test finding content with multiple ids
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
+     */
+    public function testFindMultipleIds()
+    {
+        $this->insertCustomContent();
+        $searchIds = array( 3, 5, 7 );
+        $list = $this->backend->find( 'Content', array( 'id' => $searchIds ) );
+        self::assertEquals( count( $searchIds ), count( $list ) );
+
+        foreach ( $list as $vo )
+        {
+            self::assertInstanceOf( 'ezp\\Persistence\\Content', $vo );
+            self::assertContains( $vo->id, $searchIds );
+        }
+    }
+
+    /**
      * Test finding content with results
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
      */
     public function testFindMatchOnArray()
     {
-        $list = $this->backend->find( "Content\\Type", array( "contentTypeGroupIds" => 1 ) );
+        $list = $this->backend->find( "Content\\Type", array( "groupIds" => 1 ) );
         $this->assertEquals( 1, count( $list ) );
         foreach ( $list as $key => $content )
         {
@@ -208,6 +232,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test finding content with results using join
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
      */
     public function testFindJoin()
     {
@@ -240,6 +265,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test finding content with results using join and deep matching
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
      */
     public function testFindJoinDeepMatch()
     {
@@ -273,6 +299,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      *
      * @expectedException ezp\Base\Exception\Logic
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
      */
     public function testFindJoinDeepMatchCollision()
     {
@@ -288,6 +315,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test finding content with results using several levels of join
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
      */
     public function testFindSubJoin()
     {
@@ -295,10 +323,28 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
     }
 
     /**
+     * Test finding content with wildcard
+     *
+     * @covers \ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
+     */
+    public function testFindWildcard()
+    {
+        $this->insertCustomContent();
+        $list = $this->backend->find( 'Content', array( 'name' => 'foo%' ) );
+        foreach ( $list as $vo )
+        {
+            self::assertInstanceOf( 'ezp\\Persistence\\Content', $vo );
+            self::assertTrue( strpos( $vo->name, 'foo' ) === 0 );
+        }
+    }
+
+    /**
      * Test counting content without results
      *
      * @dataProvider providerForFindEmpty
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::count
+     * @group inMemoryBackend
      */
     public function testCountEmpty( $searchData )
     {
@@ -314,6 +360,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      *
      * @dataProvider providerForFind
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::count
+     * @group inMemoryBackend
      */
     public function testCount( $searchData, $result )
     {
@@ -328,6 +375,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test counting content with results using join and deep matching
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::count
+     * @group inMemoryBackend
      */
     public function testCountJoinDeepMatch()
     {
@@ -344,6 +392,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      *
      * @expectedException ezp\Base\Exception\Logic
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::find
+     * @group inMemoryBackend
      */
     public function testCountJoinDeepMatchCollision()
     {
@@ -359,14 +408,14 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test loading content without results
      *
      * @dataProvider providerForLoadEmpty
+     * @expectedException \ezp\Base\Exception\NotFound
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::load
+     * @group inMemoryBackend
      */
     public function testLoadEmpty( $searchData )
     {
         $this->insertCustomContent();
-        $this->assertNull(
-            $this->backend->load( "Content", $searchData )
-        );
+        $this->backend->load( "Content", $searchData );
     }
 
     public function providerForLoadEmpty()
@@ -386,6 +435,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      *
      * @dataProvider providerForLoad
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::load
+     * @group inMemoryBackend
      */
     public function testLoad( $searchData, $result )
     {
@@ -437,6 +487,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test updating content on unexisting ID
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::update
+     * @group inMemoryBackend
      */
     public function testUpdateUnexistingId()
     {
@@ -449,6 +500,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test updating content with an extra attribute
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::update
+     * @group inMemoryBackend
      */
     public function testUpdateNewAttribute()
     {
@@ -466,6 +518,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test updating content
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::update
+     * @group inMemoryBackend
      */
     public function testUpdate()
     {
@@ -481,6 +534,7 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
      * Test updating content with a null value
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::update
+     * @group inMemoryBackend
      */
     public function testUpdateWithNullValue()
     {
@@ -490,5 +544,38 @@ class BackendDataTest extends PHPUnit_Framework_TestCase
         );
         $content = $this->backend->load( "Content", 3 );
         $this->assertEquals( null, $content->name );
+    }
+
+    /**
+     * Test deleting content
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::delete
+     * @group inMemoryBackend
+     */
+    public function testDelete()
+    {
+        $this->insertCustomContent();
+        $this->backend->delete( "Content", 1 );
+        try
+        {
+            $this->backend->load( "Content", 1 );
+            $this->fail( "Content has not been deleted" );
+        }
+        catch ( NotFound $e )
+        {
+        }
+    }
+
+    /**
+     * Test deleting content which does not exist
+     *
+     * @expectedException \ezp\Base\Exception\NotFound
+     * @covers ezp\Persistence\Tests\InMemoryEngine\Backend::delete
+     * @group inMemoryBackend
+     */
+    public function testDeleteNotFound()
+    {
+        $this->insertCustomContent();
+        $this->backend->delete( "Content", 42 );
     }
 }

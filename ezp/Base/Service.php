@@ -8,8 +8,10 @@
  */
 
 namespace ezp\Base;
-use ezp\Base\Repository,
+use ezp\Base\Model,
     ezp\Base\ModelStorageInterface,
+    ezp\Base\Repository,
+    ezp\Base\Exception\PropertyNotFound,
     ezp\Persistence\Repository\Handler,
     ezp\Persistence\ValueObject;
 
@@ -51,10 +53,71 @@ abstract class Service
     }
 
     /**
-     * Factory method to build a domain object from a value object $vo returned by Storage Engine.
+     * General method to fill in property values in struct from model->property values
      *
-     * @param ValueObject $vo Value object returned by storage engine
-     * @return \ezp\Base\Model
+     * @param \ezp\Persistence\ValueObject $struct
+     * @param \ezp\Base\Model $do
+     * @param array $skipProperties List of properties that should be skipped
+     * @throws \ezp\Base\Exception\PropertyNotFound If property is missing, has a value of null
+     *                                              and {@link setPropertyByConvention()} returns false.
+     * @uses setPropertyByConvention()
      */
-    abstract protected function buildDomainObject( ValueObject $vo );
+    protected function fillStruct( ValueObject $struct, Model $do, array $skipProperties = array() )
+    {
+        $state = $do->getState();
+        $vo = $state['properties'];
+        foreach ( $struct as $property => $value )
+        {
+            // skip property if mentioned in $skipProperties
+            if ( in_array( $property, $skipProperties ) )
+            {
+                continue;
+            }
+            // set property value if there is one
+            else if ( isset( $vo->$property ) )
+            {
+                $struct->$property = $vo->$property;
+                continue;
+            }
+
+            // Try to set by convention, if not throw PropertyNotFound exception
+            if ( !$this->setPropertyByConvention( $struct, $property ) )
+                throw new PropertyNotFound( $property, get_class( $do ) );
+        }
+    }
+
+    /**
+     * General method to fill in property value by convention
+     *
+     * Properties filled by convention:
+     *     - remoteId
+     *     - created
+     *     - modified
+     *     - creatorId
+     *     - modifierId
+     *
+     * @param \ezp\Persistence\ValueObject $struct
+     * @param string $property
+     * @return bool False if no property was set by convention
+     */
+    protected function setPropertyByConvention( ValueObject $struct, $property )
+    {
+        switch ( $property )
+        {
+            case 'remoteId':
+                $struct->$property = md5( uniqid( get_class( $struct ), true ) );
+                break;
+            case 'created':
+            case 'modified':
+                $struct->$property = time();
+                break;
+            case 'creatorId':
+            case 'modifierId':
+                $struct->$property = 14;// @todo Use user object when that is made part of repository/services
+                break;
+            default:
+                return false;
+        }
+        return true;
+    }
 }

@@ -22,7 +22,7 @@ interface Handler
 {
     /**
      * @param \ezp\Persistence\Content\Type\Group\CreateStruct $group
-     * @return Group
+     * @return \ezp\Persistence\Content\Type\Group
      */
     public function createGroup( GroupCreateStruct $group );
 
@@ -33,32 +33,41 @@ interface Handler
 
     /**
      * @param mixed $groupId
+     * @todo Throw exception if group is not found, also if group contains types
      */
     public function deleteGroup( $groupId );
 
     /**
-     * @return Group[]
+     * @param int $groupId
+     * @return \ezp\Persistence\Content\Type\Group
+     */
+    public function loadGroup( $groupId );
+
+    /**
+     * @return \ezp\Persistence\Content\Type\Group[]
      */
     public function loadAllGroups();
 
     /**
      * @param mixed $groupId
      * @param int $version ContentType version
-     * @return Type[]
+     * @return \ezp\Persistence\Content\Type[]
      */
     public function loadContentTypes( $groupId, $version = 0 );
 
     /**
+     * Load a content type by id and version
+     *
+     * @todo Use constant for $version?
      * @param int $contentTypeId
      * @param int $version
-     * @todo Use constant for $version?
-     * @todo Shouldn't this default to 0?
+     * @return \ezp\Persistence\Content\Type
      */
-    public function load( $contentTypeId, $version = 1 );
+    public function load( $contentTypeId, $version = 0 );
 
     /**
      * @param \ezp\Persistence\Content\Type\CreateStruct $contentType
-     * @return Type
+     * @return \ezp\Persistence\Content\Type
      */
     public function create( CreateStruct $contentType );
 
@@ -101,6 +110,7 @@ interface Handler
      * @param mixed $groupId
      * @param mixed $contentTypeId
      * @param int $version
+     * @todo Throw exception if last group on content type (hence, it should be deleted instead)
      */
     public function unlink( $groupId, $contentTypeId, $version );
 

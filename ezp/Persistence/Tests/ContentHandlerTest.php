@@ -13,6 +13,7 @@ use ezp\Persistence\Content,
     ezp\Persistence\Content\Field,
     ezp\Persistence\Content\Criterion\ContentId,
     ezp\Persistence\Content\Criterion\Operator,
+    ezp\Base\Exception\NotFound,
     ezp\Content\Version;
 
 /**
@@ -22,7 +23,7 @@ use ezp\Persistence\Content,
 class ContentHandlerTest extends HandlerTest
 {
     /**
-     * @var Content
+     * @var \ezp\Content
      */
     protected $content;
 
@@ -33,8 +34,7 @@ class ContentHandlerTest extends HandlerTest
     protected $contentId;
 
     /**
-     *
-     * @var ezp
+     * @var \ezp\Content[]
      */
     protected $contentToDelete = array();
 
@@ -70,10 +70,17 @@ class ContentHandlerTest extends HandlerTest
     protected function tearDown()
     {
         $contentHandler = $this->repositoryHandler->contentHandler();
-        // Removing default objects as well as those created by tests
-        foreach ( $this->contentToDelete as $content )
+
+        try
         {
-            $contentHandler->delete( $content->id );
+            // Removing default objects as well as those created by tests
+            foreach ( $this->contentToDelete as $content )
+            {
+                $contentHandler->delete( $content->id );
+            }
+        }
+        catch ( NotFound $e )
+        {
         }
         unset( $this->contentId );
         //$contentHandler->delete( 2 );
@@ -81,18 +88,18 @@ class ContentHandlerTest extends HandlerTest
     }
 
     /**
-     * Test load function
+     * Test findSingle function
      *
-     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentHandler::load
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentHandler::findSingle
      */
-    public function testLoad()
+    public function testFindSingle()
     {
-        $content = $this->repositoryHandler->contentHandler()->load( $this->content->id );
+        $content = $this->repositoryHandler->contentHandler()->findSingle( new ContentId( $this->content->id ) );
         $this->assertTrue( $content instanceof Content );
         $this->assertEquals( $this->contentId, $content->id );
         $this->assertEquals( 14, $content->ownerId );
         $this->assertEquals( 'test', $content->name );
-        $this->assertEquals( 1, count( $content->versionInfos ) );
+        $this->assertInstanceOf( 'ezp\\Persistence\\Content\\Version', $content->version );
     }
 
     /**
@@ -122,23 +129,21 @@ class ContentHandlerTest extends HandlerTest
         $this->assertEquals( $this->contentId + 1, $content->id );
         $this->assertEquals( 14, $content->ownerId );
         $this->assertEquals( 'test', $content->name );
-        $this->assertEquals( 1, count( $content->versionInfos ) );
 
-        $version = $content->versionInfos[0];
-        $this->assertInstanceOf( 'ezp\\Persistence\\Content\\Version', $version );
-        $this->assertEquals( 2, $version->id );
-        $this->assertEquals( 14, $version->creatorId );
-        $this->assertEquals( Version::STATUS_DRAFT, $version->state );
-        $this->assertEquals( $content->id, $version->contentId );
-        $this->assertEquals( 1, count( $version->fields ) );
+        $this->assertInstanceOf( 'ezp\\Persistence\\Content\\Version', $content->version );
+        $this->assertEquals( 3, $content->version->id );
+        $this->assertEquals( 14, $content->version->creatorId );
+        $this->assertEquals( Version::STATUS_DRAFT, $content->version->state );
+        $this->assertEquals( $content->id, $content->version->contentId );
+        $this->assertEquals( 1, count( $content->version->fields ) );
 
-        $field = $version->fields[0];
+        $field = $content->version->fields[0];
         $this->assertInstanceOf( 'ezp\\Persistence\\Content\\Field', $field );
         $this->assertEquals( 2, $field->id );
         $this->assertEquals( 'ezstring', $field->type );
         $this->assertEquals( 'eng-GB', $field->language );
         $this->assertEquals( 'Welcome', $field->value );
-        $this->assertEquals( $version->id, $field->versionNo );
+        $this->assertEquals( $content->version->id, $field->versionNo );
     }
 
     /**
@@ -149,8 +154,17 @@ class ContentHandlerTest extends HandlerTest
     public function testDelete()
     {
         $contentHandler = $this->repositoryHandler->contentHandler();
-        $this->assertTrue( $contentHandler->delete( $this->content->id ) );
-        $this->assertNull( $contentHandler->load( $this->content->id ) );
+        $contentHandler->delete( $this->content->id );
+
+        try
+        {
+            $contentHandler->findSingle( new ContentId( $this->content->id ) );
+            $this->fail( "Content not removed correctly" );
+        }
+        catch ( NotFound $e )
+        {
+        }
+
         $this->assertEquals( 0, count( $contentHandler->listVersions( $this->content->id ) ) );
     }
 

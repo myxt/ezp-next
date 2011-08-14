@@ -9,6 +9,7 @@
 
 namespace ezp\Persistence\Storage\Legacy\User\Gateway;
 use ezp\Persistence\Storage\Legacy\User\Gateway,
+    ezp\Persistence\Storage\Legacy\EzcDbHandler,
     ezp\Persistence\User;
 
 /**
@@ -19,17 +20,17 @@ class EzcDatabase extends Gateway
     /**
      * Database handler
      *
-     * @var \ezcDbHandler
+     * @var EzcDbHandler
      */
     protected $handler;
 
     /**
      * Construct from database handler
      *
-     * @param \ezcDbHandler $handler
+     * @param EzcDbHandler $handler
      * @return void
      */
-    public function __construct( \ezcDbHandler $handler )
+    public function __construct( EzcDbHandler $handler )
     {
         $this->handler = $handler;
     }
@@ -44,12 +45,23 @@ class EzcDatabase extends Gateway
     {
         $query = $this->handler->createInsertQuery();
         $query
-            ->insertInto( 'ezuser' )
-            ->set( 'contentobject_id', $query->bindValue( $user->id ) )
-            ->set( 'login', $query->bindValue( $user->login ) )
-            ->set( 'email', $query->bindValue( $user->email ) )
-            ->set( 'password_hash', $query->bindValue( $user->password ) )
-            ->set( 'password_hash_type', $query->bindValue( $user->hashAlgorithm ) );
+            ->insertInto( $this->handler->quoteTable( 'ezuser' ) )
+            ->set(
+                $this->handler->quoteColumn( 'contentobject_id' ),
+                $query->bindValue( $user->id )
+            )->set(
+                $this->handler->quoteColumn( 'login' ),
+                $query->bindValue( $user->login )
+            )->set(
+                $this->handler->quoteColumn( 'email' ),
+                $query->bindValue( $user->email )
+            )->set(
+                $this->handler->quoteColumn( 'password_hash' ),
+                $query->bindValue( $user->password )
+            )->set(
+                $this->handler->quoteColumn( 'password_hash_type' ),
+                $query->bindValue( $user->hashAlgorithm )
+            );
         $query->prepare()->execute();
     }
 
@@ -62,8 +74,11 @@ class EzcDatabase extends Gateway
     {
         $query = $this->handler->createDeleteQuery();
         $query
-            ->deleteFrom( 'ezuser' )
-            ->where( $query->expr->eq( 'contentobject_id', $query->bindValue( $userId ) ) );
+            ->deleteFrom( $this->handler->quoteTable( 'ezuser' ) )
+            ->where( $query->expr->eq(
+                $this->handler->quoteColumn( 'contentobject_id' ),
+                $query->bindValue( $userId )
+            ) );
         $query->prepare()->execute();
     }
 
@@ -76,12 +91,92 @@ class EzcDatabase extends Gateway
     {
         $query = $this->handler->createUpdateQuery();
         $query
-            ->update( 'ezuser' )
-            ->set( 'login', $query->bindValue( $user->login ) )
-            ->set( 'email', $query->bindValue( $user->email ) )
-            ->set( 'password_hash', $query->bindValue( $user->password ) )
-            ->set( 'password_hash_type', $query->bindValue( $user->hashAlgorithm ) )
-            ->where( $query->expr->eq( 'contentobject_id', $query->bindValue( $user->id ) ) );
+            ->update( $this->handler->quoteTable( 'ezuser' ) )
+            ->set(
+                $this->handler->quoteColumn( 'login' ),
+                $query->bindValue( $user->login )
+            )->set(
+                $this->handler->quoteColumn( 'email' ),
+                $query->bindValue( $user->email )
+            )->set(
+                $this->handler->quoteColumn( 'password_hash' ),
+                $query->bindValue( $user->password )
+            )->set(
+                $this->handler->quoteColumn( 'password_hash_type' ),
+                $query->bindValue( $user->hashAlgorithm )
+            )->where( $query->expr->eq(
+                $this->handler->quoteColumn( 'contentobject_id' ),
+                $query->bindValue( $user->id )
+            ) );
+        $query->prepare()->execute();
+    }
+
+    /**
+     * Returns the user policies associated with the user
+     *
+     * @param mixed $userId
+     * @return UserPolicy[]
+     */
+    public function getPermissions( $userId )
+    {
+
+    }
+
+    /**
+     * Assign role to user with given limitation
+     *
+     * @param mixed $userId
+     * @param mixed $roleId
+     * @param array $limitation
+     */
+    public function assignRole( $userId, $roleId, array $limitation )
+    {
+        foreach ( $limitation as $identifier => $values )
+        {
+            foreach ( $values as $value )
+            {
+                $query = $this->handler->createInsertQuery();
+                $query
+                    ->insertInto( $this->handler->quoteTable( 'ezuser_role' ) )
+                    ->set(
+                        $this->handler->quoteColumn( 'contentobject_id' ),
+                        $query->bindValue( $userId )
+                    )->set(
+                        $this->handler->quoteColumn( 'role_id' ),
+                        $query->bindValue( $roleId )
+                    )->set(
+                        $this->handler->quoteColumn( 'limit_identifier' ),
+                        $query->bindValue( $identifier )
+                    )->set(
+                        $this->handler->quoteColumn( 'limit_value' ),
+                        $query->bindValue( $value )
+                    );
+                $query->prepare()->execute();
+            }
+        }
+    }
+
+    /**
+     * Remove role from user
+     *
+     * @param mixed $userId
+     * @param mixed $roleId
+     */
+    public function removeRole( $userId, $roleId )
+    {
+        $query = $this->handler->createDeleteQuery();
+        $query
+            ->deleteFrom( $this->handler->quoteTable( 'ezuser_role' ) )
+            ->where( $query->expr->lAnd(
+                $query->expr->eq(
+                    $this->handler->quoteColumn( 'contentobject_id' ),
+                    $query->bindValue( $userId )
+                ),
+                $query->expr->eq(
+                    $this->handler->quoteColumn( 'role_id' ),
+                    $query->bindValue( $roleId )
+                )
+            ) );
         $query->prepare()->execute();
     }
 }

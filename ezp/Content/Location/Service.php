@@ -19,7 +19,8 @@ use ezp\Base\Exception,
     ezp\Base\Exception\Logic,
     ezp\Persistence\Content\Location as LocationValue,
     ezp\Persistence\ValueObject,
-    ezp\Persistence\Content\Location\CreateStruct;
+    ezp\Persistence\Content\Location\CreateStruct,
+    ezp\Persistence\Content\Location\UpdateStruct;
 
 /**
  * Location service, used for complex subtree operations
@@ -30,10 +31,10 @@ class Service extends BaseService
     /**
      * Copies the subtree starting from $subtree as a new subtree of $targetLocation
      *
-     * @param Location $subtree
-     * @param Location $targetLocation
+     * @param \ezp\Content\Location $subtree
+     * @param \ezp\Content\Location $targetLocation
      *
-     * @return Location The newly created subtree
+     * @return \ezp\Content\Location The newly created subtree
      */
     public function copy( Location $subtree, Location $targetLocation )
     {
@@ -42,8 +43,8 @@ class Service extends BaseService
     /**
      * Loads a location object from its $locationId
      * @param integer $locationId
-     * @return Location
-     * @throws Exception\NotFound if no location is available with $locationId
+     * @return \ezp\Content\Location
+     * @throws \ezp\Base\Exception\NotFound if no location is available with $locationId
      */
     public function load( $locationId )
     {
@@ -64,9 +65,9 @@ class Service extends BaseService
     /**
      * Creates the new $location in the content repository
      *
-     * @param Location $location
-     * @return Location the newly created Location
-     * @throws ezp\Base\Exception\Logic If a validation problem has been found for $content
+     * @param \ezp\Content\Location $location
+     * @return \ezp\Content\Location the newly created Location
+     * @throws \ezp\Base\Exception\Logic If a validation problem has been found for $content
      */
     public function create( Location $location )
     {
@@ -97,120 +98,186 @@ class Service extends BaseService
     /**
      * Updates $location in the content repository
      *
-     * @param Location $location
-     * @return Location the updated Location
-     * @throws Exception\Validation If a validation problem has been found for $content
+     * @param \ezp\Content\Location $location
+     * @return \ezp\Content\Location the updated Location
+     * @throws \ezp\Base\Exception\Logic If a validation problem has been found for $location
      */
     public function update( Location $location )
     {
-        // repo/storage stuff
+        $struct = new UpdateStruct;
+        foreach ( $location->properties() as $name => $value )
+        {
+            if ( property_exists( $struct, $name ) )
+            {
+                $struct->$name = $location->$name;
+            }
+        }
+
+        if ( !$this->handler->locationHandler()->updateLocation( $struct, $location->id ) )
+        {
+            throw new Logic( "Location #{$location->id}", 'Could not be updated' );
+        }
+
         return $location;
     }
 
     /**
      * Swaps the contents hold by the $location1 and $location2
      *
-     * @param Location $location1
-     * @param Location $location2
+     * @param \ezp\Content\Location $location1
+     * @param \ezp\Content\Location $location2
      * @return void
-     * @throws Exception\Validation If a validation problem has been found
+     * @throws \ezp\Base\Exception\Validation If a validation problem has been found
      */
     public function swap( Location $location1, Location $location2 )
     {
+        $location1Id = $location1->id;
+        $location2Id = $location2->id;
 
+        $this->handler->locationHandler()->swap( $location1Id, $location2Id );
+
+        // Update Domain objects references
+        $this->refreshDomainObject( $location1 );
+        $this->refreshDomainObject( $location2 );
     }
 
     /**
      * Hides the $location and marks invisible all descendants of $location.
      *
-     * @param Location $location
-     * @return void
-     * @throws Exception\Validation If a validation problem has been found
+     * @param \ezp\Content\Location $location
+     * @return \ezp\Content\Location $location, with updated hidden value
+     * @todo Make children visibility update more dynamic with some kind of LazyLoadedCollection
      */
     public function hide( Location $location )
     {
-        // take care of :
-        // 1. hiding $location
-        // 2. making the whole subtree invisible
+        $this->handler->locationHandler()->hide( $location->id );
+
+        // Get VO, update hidden property and re-inject the reference it to $location
+        $state = $location->getState();
+        $state['properties']->hidden = true;
+        $location->setState( array( 'properties' => $state['properties'] ) );
+
+        foreach ( $location->children as $child )
+        {
+            $childState = $child->getState();
+            $childState['properties']->invisible = true;
+            // Following line is not needed but present for clarification
+            // $childState['properties'] is actually a reference of $child::$properties
+            $child->setState( array( 'properties' => $childState['properties'] ) );
+        }
+
+        return $location;
     }
 
     /**
      * Unhides the $location and marks visible all descendants of $locations
      * until a hidden location is found.
      *
-     * @param Location $location
-     * @return void
-     * @throws Exception\Validation If a validation problem has been found;
+     * @param \ezp\Content\Location $location
+     * @return \ezp\Content\Location $location, with updated hidden value
+     * @todo Make children visibility update more dynamic with some kind of LazyLoadedCollection
      */
     public function unhide( Location $location )
     {
-        // take care of :
-        // 1. unhiding $location
-        // 2. making the whole subtree visible (unless we found a hidden
-        // location)
+        $this->handler->locationHandler()->unHide( $location->id );
+
+        // Get VO, update hidden property and re-inject the reference to $location
+        $state = $location->getState();
+        $state['properties']->hidden = false;
+        $location->setState( array( 'properties' => $state['properties'] ) );
+
+        foreach ( $location->children as $child )
+        {
+            $childState = $child->getState();
+            $childState['properties']->invisible = false;
+            // Following line is not needed but present for clarification
+            // $childState['properties'] is actually a reference of $child::$properties
+            $child->setState( array( 'properties' => $childState['properties'] ) );
+        }
+
+        return $location;
     }
 
     /**
      * Moves $location under $newParent and updates all descendants of
      * $location accordingly.
      *
-     * @param Location $location
-     * @param Location $newParent
+     * @param \ezp\Content\Location $location
+     * @param \ezp\Content\Location $newParent
      * @return void
-     * @throws Exception\Validation If a validation problem has been found;
+     * @throws \ezp\Base\Exception\Validation If a validation problem has been found;
      */
     public function move( Location $location, Location $newParent )
     {
-        // take care of :
-        // 1. set parentId and path for $location
-        // 2. changing path attribute to the subtree below $location
+        $this->handler->locationHandler()->move( $location->id, $newParent->id );
+        $this->refreshDomainObject( $location );
     }
 
     /**
      * Deletes the $locations and all descendants of $location.
      *
-     * @param Location $location
+     * @param \ezp\Content\Location $location
      * @return void
-     * @throws Exception\Validation If a validation problem has been found;
+     * @throws \ezp\Base\Exception\Validation If a validation problem has been found;
+     * @throws \ezp\Base\Exception\NotFound if no location is available with $locationId
      */
     public function delete( Location $location )
     {
-        // take care of:
-        // 1. removing the current location
-        // 2. removing the content addressed by the location if there's no more
-        // location
-        // 3. do the same operations on the subtree (recursive calls through
-        // children ?)
-        // note: this is different from Content::delete()
+        $this->handler->locationHandler()->removeSubtree( $location->id );
+        $state = $location->getState();
+        $this->refreshDomainObject( $location, $state['properties'] );
     }
 
     /**
      * Assigns $section to the contents hold by $startingPoint location and
      * all contents hold by descendants location of $startingPoint
      *
-     * @param Location $startingPoint
+     * @param \ezp\Content\Location $startingPoint
      * @param Section $section
      * @return void
-     * @throws Exception\Validation If a validation problem has been found;
+     * @throws \ezp\Base\Exception\Validation If a validation problem has been found;
      */
     public function assignSection( Location $startingPoint, Section $section )
     {
     }
 
-    protected function buildDomainObject( ValueObject $vo )
+    /**
+     * Builds Location domain object from $vo ValueObject returned by Persistence API
+     * @param \ezp\Persistence\Location $vo Location value object (extending \ezp\Persistence\ValueObject)
+     *                                      returned by persistence
+     * @return \ezp\Content\Location
+     * @throws \ezp\Base\Exception\InvalidArgumentType
+     */
+    protected function buildDomainObject( LocationValue $vo )
     {
-        if ( !$vo instanceof LocationValue )
+        $location = new Location( new Proxy( $this->repository->getContentService(), $vo->contentId ) );
+
+        return $this->refreshDomainObject( $location, $vo );
+    }
+
+    /**
+     * Refreshes provided $location. Useful if backend data has changed
+     *
+     * @param \ezp\Content\Location $location Location to refresh
+     * @param \ezp\Persistence\Location $vo Location value object. If provided, $location will be updated with $vo's data
+     * @return \ezp\Content\Location
+     * @throws \ezp\Base\Exception\InvalidArgumentType
+     */
+    protected function refreshDomainObject( Location $location, LocationValue $vo = null )
+    {
+        if ( $vo === null )
         {
-            throw new InvalidArgumentType( 'Value object', 'ezp\\Persistence\\Content\\Location', $vo );
+            $vo = $this->handler->locationHandler()->load( $location->id );
         }
 
-        $location = new Location( new Proxy( $this->repository->getContentService(), $vo->contentId ) );
-        $location->setState(
-            array(
-                'parent' => new Proxy( $this, $vo->parentId ),
-                'properties' => $vo
-            )
+        $newState = array(
+            'parent' => new Proxy( $this, $vo->parentId ),
+            'properties' => $vo
         );
+        // Check if associated content also needs to be refreshed
+        if ( $vo->contentId != $location->contentId )
+            $newState['content'] = new Proxy( $this->repository->getContentService(), $vo->contentId );
+        $location->setState( $newState );
 
         // Container property (default sorting)
         $containerProperty = new ContainerProperty;

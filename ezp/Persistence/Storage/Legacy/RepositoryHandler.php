@@ -97,7 +97,7 @@ class RepositoryHandler implements HandlerInterface
      */
     public function __construct( $dsn )
     {
-        $this->dbHandler = \ezcDbFactory::create( $dsn );
+        $this->dbHandler = new EzcDbHandler( \ezcDbFactory::create( $dsn ) );
     }
 
     /**
@@ -109,6 +109,7 @@ class RepositoryHandler implements HandlerInterface
         {
             $this->contentHandler = new Content\Handler(
                 new Content\Gateway\EzcDatabase( $this->dbHandler ),
+                $this->locationHandler(),
                 new Content\Mapper( $this->getFieldValueConverterRegistry() ),
                 new Content\StorageRegistry( $this->getStorageRegistry() )
             );
@@ -168,7 +169,6 @@ class RepositoryHandler implements HandlerInterface
         if ( !isset( $this->locationHandler ) )
         {
             $this->locationHandler = new LocationHandler(
-                $this->contentHandler(),
                 new Content\Location\Gateway\EzcDatabase( $this->dbHandler )
             );
         }

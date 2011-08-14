@@ -10,6 +10,7 @@
 namespace ezp\Persistence\Storage\Legacy\Content\Location;
 use ezp\Persistence\Content\Location,
     ezp\Persistence\Content\Location\CreateStruct,
+    ezp\Persistence\Content\Location\UpdateStruct,
     ezp\Persistence\Content\Location\Handler as BaseLocationHandler,
     ezp\Persistence\Storage\Legacy\Content\Handler as ContentHandler,
     ezp\Persistence\Storage\Legacy\Content\Location\Gateway as LocationGateway;
@@ -20,13 +21,6 @@ use ezp\Persistence\Content\Location,
 class Handler implements BaseLocationHandler
 {
     /**
-     * Content handler implementation
-     *
-     * @var \ezp\Persistence\Storage\Legacy\Content\Handler
-     */
-    protected $contentHandler;
-
-    /**
      * Gaateway for handling location data
      *
      * @var \ezp\Persistence\Storage\Legacy\Content\Location\Gateway
@@ -36,13 +30,11 @@ class Handler implements BaseLocationHandler
     /**
      * Construct from userGateway
      *
-     * @param \ezp\Persistence\Storage\Legacy\Content\Handler $contentHandler
      * @param \ezp\Persistence\Storage\Legacy\Content\Location\Gateway $locationGateway
      * @return void
      */
-    public function __construct( ContentHandler $contentHandler, LocationGateway $locationGateway )
+    public function __construct( LocationGateway $locationGateway )
     {
-        $this->contentHandler = $contentHandler;
         $this->locationGateway = $locationGateway;
     }
 
@@ -124,13 +116,26 @@ class Handler implements BaseLocationHandler
             $destinationNodeData['path_string']
         );
 
-        $this->locationGateway->updateSubtreeModificationTime(
-            $destinationNodeData['path_string'] . $sourceNodeData['node_id'] . '/'
-        );
-
         $this->locationGateway->updateNodeAssignement(
             $sourceNodeData['contentobject_id'], $destinationParentId
         );
+    }
+
+    /**
+     * Marks the given nodes and all ancestors as modified
+     *
+     * Optionally a time stamp with the modification date may be specified,
+     * otherwise the current time is used.
+     *
+     * @param int|string $locationId
+     * @param int $timeStamp
+     * @return void
+     */
+    public function markSubtreeModified( $locationId, $timeStamp = null )
+    {
+        $nodeData  = $this->locationGateway->getBasicNodeData( $locationId );
+        $timeStamp = $timeStamp ?: time();
+        $this->locationGateway->updateSubtreeModificationTime( $nodeData['path_string'], $timeStamp );
     }
 
     /**
@@ -143,7 +148,6 @@ class Handler implements BaseLocationHandler
         $sourceNodeData = $this->locationGateway->getBasicNodeData( $id );
 
         $this->locationGateway->hideSubtree( $sourceNodeData['path_string'] );
-        $this->locationGateway->updateSubtreeModificationTime( $sourceNodeData['path_string'] );
     }
 
     /**
@@ -157,7 +161,6 @@ class Handler implements BaseLocationHandler
         $sourceNodeData = $this->locationGateway->getBasicNodeData( $id );
 
         $this->locationGateway->unhideSubtree( $sourceNodeData['path_string'] );
-        $this->locationGateway->updateSubtreeModificationTime( $sourceNodeData['path_string'] );
     }
 
     /**
@@ -173,27 +176,18 @@ class Handler implements BaseLocationHandler
     public function swap( $locationId1, $locationId2 )
     {
         $this->locationGateway->swap( $locationId1, $locationId2 );
-
-        $locationData1 = $this->locationGateway->getBasicNodeData( $locationId1 );
-        $this->locationGateway->updateSubtreeModificationTime( $this->getParentPathString( $locationData1['path_string'] ) );
-
-        $locationData2 = $this->locationGateway->getBasicNodeData( $locationId2 );
-        $this->locationGateway->updateSubtreeModificationTime( $this->getParentPathString( $locationData2['path_string'] ) );
     }
 
     /**
-     * Updates an existing location priority.
+     * Updates an existing location.
      *
+     * @param \ezp\Persistence\Content\Location\UpdateStruct $location
      * @param int $locationId
-     * @param int $priority
      * @return boolean
      */
-    public function updatePriority( $locationId, $priority )
+    public function updateLocation( UpdateStruct $location, $locationId )
     {
-        $sourceNodeData = $this->locationGateway->getBasicNodeData( $locationId );
-
-        $this->locationGateway->updatePriority( $locationId, $priority );
-        $this->locationGateway->updateSubtreeModificationTime( $this->getParentPathString( $sourceNodeData['path_string'] ) );
+        throw new RuntimeException( '@TODO: Implement' );
     }
 
     /**
@@ -206,10 +200,7 @@ class Handler implements BaseLocationHandler
     public function createLocation( CreateStruct $locationStruct, $parentId )
     {
         $parentNodeData = $this->locationGateway->getBasicNodeData( $parentId );
-        $content = $this->contentHandler->load( $locationStruct->contentId );
-
-        $this->locationGateway->createLocation( $content, $parentNodeData );
-        $this->locationGateway->updateSubtreeModificationTime( $parentNodeData['path_string'] );
+        $this->locationGateway->createLocation( $locationStruct, $parentNodeData );
     }
 
     /**
@@ -243,18 +234,21 @@ class Handler implements BaseLocationHandler
         $sourceNodeData = $this->locationGateway->getBasicNodeData( $locationId );
 
         $this->locationGateway->trashSubtree( $sourceNodeData['path_string'] );
-        $this->locationGateway->updateSubtreeModificationTime( $this->getParentPathString( $sourceNodeData['path_string'] ) );
     }
 
     /**
-     * Returns a trashed subtree to normal state.
+     * Returns a trashed location to normal state.
      *
-     * The affected subtree is now again part of matching content queries.
+     * Recreates the originally trashed location in the new position. If no new
+     * position has been specified, it will be tried to re-create the location
+     * at the old position. If this is not possible ( because the old location
+     * does not exist any more) and exception is thrown.
      *
      * @param mixed $locationId
+     * @param mixed $newParentId
      * @return boolean
      */
-    public function untrashSubtree( $locationId )
+    public function untrashLocation( $locationId, $newParentId = null )
     {
         throw new \RuntimeException( '@TODO: Discussion pending…' );
     }

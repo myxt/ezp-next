@@ -55,25 +55,24 @@ class ContentSearchHandlerTest extends TestCase
 
     protected function getContentSearchHandler( array $fullTextSearchConfiguration = array() )
     {
-        return new Content\SearchHandler(
-            new Content\SearchHandler\Gateway\EzcDatabase(
-                $database = $this->getDatabaseHandler(),
-                new Content\SearchHandler\Gateway\CriteriaConverter( array(
-                    new Content\SearchHandler\Gateway\CriterionHandler\ContentId(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\LogicalNot(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\LogicalAnd(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\LogicalOr(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\Subtree(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\ContentType(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\ContentTypeGroup(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\DateMetadata(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\LocationId(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\ParentLocationId(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\RemoteId(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\Section(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\Status(),
-                    new Content\SearchHandler\Gateway\CriterionHandler\FullText(
-                        $database,
+        return new Content\Search\Handler(
+            new Content\Search\Gateway\EzcDatabase(
+                $this->getDatabaseHandler(),
+                new Content\Search\Gateway\CriteriaConverter( array(
+                    new Content\Search\Gateway\CriterionHandler\ContentId(),
+                    new Content\Search\Gateway\CriterionHandler\LogicalNot(),
+                    new Content\Search\Gateway\CriterionHandler\LogicalAnd(),
+                    new Content\Search\Gateway\CriterionHandler\LogicalOr(),
+                    new Content\Search\Gateway\CriterionHandler\SubtreeId(),
+                    new Content\Search\Gateway\CriterionHandler\ContentTypeId(),
+                    new Content\Search\Gateway\CriterionHandler\ContentTypeGroupId(),
+                    new Content\Search\Gateway\CriterionHandler\DateMetadata(),
+                    new Content\Search\Gateway\CriterionHandler\LocationId(),
+                    new Content\Search\Gateway\CriterionHandler\ParentLocationId(),
+                    new Content\Search\Gateway\CriterionHandler\RemoteId(),
+                    new Content\Search\Gateway\CriterionHandler\SectionId(),
+                    new Content\Search\Gateway\CriterionHandler\Status(),
+                    new Content\Search\Gateway\CriterionHandler\FullText(
                         $fullTextSearchConfiguration
                     ),
                 ) )
@@ -87,8 +86,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\ContentId(
-                null,
-                Criterion\Operator::IN,
                 array( 1, 4, 10 )
             ),
             0, 10, null
@@ -110,13 +107,9 @@ class ContentSearchHandlerTest extends TestCase
         $result = $locator->find(
             new Criterion\LogicalAnd( array(
                 new Criterion\ContentId(
-                    null,
-                    Criterion\Operator::IN,
                     array( 1, 4, 10 )
                 ),
                 new Criterion\ContentId(
-                    null,
-                    Criterion\Operator::IN,
                     array( 4, 12 )
                 ),
             ) ),
@@ -139,13 +132,9 @@ class ContentSearchHandlerTest extends TestCase
         $result = $locator->find(
             new Criterion\LogicalOr( array(
                 new Criterion\ContentId(
-                    null,
-                    Criterion\Operator::IN,
                     array( 1, 4, 10 )
                 ),
                 new Criterion\ContentId(
-                    null,
-                    Criterion\Operator::IN,
                     array( 4, 12 )
                 ),
             ) ),
@@ -168,14 +157,10 @@ class ContentSearchHandlerTest extends TestCase
         $result = $locator->find(
             new Criterion\LogicalAnd( array(
                 new Criterion\ContentId(
-                    null,
-                    Criterion\Operator::IN,
                     array( 1, 4, 10 )
                 ),
                 new Criterion\LogicalNot( array(
                     new Criterion\ContentId(
-                        null,
-                        Criterion\Operator::IN,
                         array( 10, 12 )
                     ),
                 ) ),
@@ -192,14 +177,12 @@ class ContentSearchHandlerTest extends TestCase
         );
     }
 
-    public function testContentSubtreeFilterIn()
+    public function testContentSubtreeIdFilterIn()
     {
         $locator = $this->getContentSearchHandler();
 
         $result = $locator->find(
-            new Criterion\Subtree(
-                null,
-                Criterion\Operator::IN,
+            new Criterion\SubtreeId(
                 array(
                     '/1/2/69/',
                 )
@@ -216,14 +199,12 @@ class ContentSearchHandlerTest extends TestCase
         );
     }
 
-    public function testContentSubtreeFilterEq()
+    public function testContentSubtreeIdFilterEq()
     {
         $locator = $this->getContentSearchHandler();
 
         $result = $locator->find(
-            new Criterion\Subtree(
-                null,
-                Criterion\Operator::EQ,
+            new Criterion\SubtreeId(
                 '/1/2/69/'
             ),
             0, 10, null
@@ -243,9 +224,7 @@ class ContentSearchHandlerTest extends TestCase
         $locator = $this->getContentSearchHandler();
 
         $result = $locator->find(
-            new Criterion\ContentType(
-                null,
-                Criterion\Operator::EQ,
+            new Criterion\ContentTypeId(
                 4
             ),
             0, 10, null
@@ -265,9 +244,7 @@ class ContentSearchHandlerTest extends TestCase
         $locator = $this->getContentSearchHandler();
 
         $result = $locator->find(
-            new Criterion\ContentTypeGroup(
-                null,
-                Criterion\Operator::EQ,
+            new Criterion\ContentTypeGroupId(
                 2
             ),
             0, 10, null
@@ -398,8 +375,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\LocationId(
-                null,
-                Criterion\Operator::IN,
                 array( 1, 2, 5 )
             ),
             0, 10, null
@@ -420,8 +395,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\ParentLocationId(
-                null,
-                Criterion\Operator::IN,
                 array( 1 )
             ),
             0, 10, null
@@ -442,8 +415,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\RemoteId(
-                null,
-                Criterion\Operator::IN,
                 array( 'f5c88a2209584891056f987fd965b0ba', 'faaeb9be3bd98ed09f606fc16d144eca' )
             ),
             0, 10, null
@@ -463,9 +434,7 @@ class ContentSearchHandlerTest extends TestCase
         $locator = $this->getContentSearchHandler();
 
         $result = $locator->find(
-            new Criterion\Section(
-                null,
-                Criterion\Operator::IN,
+            new Criterion\SectionId(
                 array( 2 )
             ),
             0, 10, null
@@ -486,8 +455,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\Status(
-                null,
-                Criterion\Operator::IN,
                 array( Criterion\Status::STATUS_PUBLISHED )
             ),
             0, 10, null
@@ -508,8 +475,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\FullText(
-                null,
-                Criterion\Operator::LIKE,
                 'applied webpage'
             ),
             0, 10, null
@@ -530,8 +495,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\FullText(
-                null,
-                Criterion\Operator::LIKE,
                 'applie*'
             ),
             0, 10, null
@@ -554,8 +517,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\FullText(
-                null,
-                Criterion\Operator::LIKE,
                 'applie*'
             ),
             0, 10, null
@@ -576,8 +537,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\FullText(
-                null,
-                Criterion\Operator::LIKE,
                 'the'
             ),
             0, 10, null
@@ -600,8 +559,6 @@ class ContentSearchHandlerTest extends TestCase
 
         $result = $locator->find(
             new Criterion\FullText(
-                null,
-                Criterion\Operator::LIKE,
                 'the'
             ),
             0, 10, null

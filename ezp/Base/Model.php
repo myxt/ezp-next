@@ -61,6 +61,7 @@ abstract class Model implements Observable, ModelInterface
      * the magic getter and setter.
      * Key is property name, value is bool indicating if property is writable.
      *
+     * @todo should mention that no type checking is done internal props.?
      * @var array
      */
     protected $readWriteProperties;
@@ -177,7 +178,7 @@ abstract class Model implements Observable, ModelInterface
                 return $this->properties->$property;
             }
 
-            throw new Logic( '$readWriteProperties', "property {$property} could not be found." );
+            throw new Logic( '$readWriteProperties', "property '{$property}' could not be found." );
         }
 
         if ( isset( $this->dynamicProperties[$property] ) )
@@ -235,7 +236,8 @@ abstract class Model implements Observable, ModelInterface
      */
     public function __isset( $property )
     {
-        return isset( $this->readWriteProperties[$property] ) || isset( $this->dynamicProperties[$property] );
+        return ( isset( $this->readWriteProperties[$property] ) && isset( $this->properties->$property ) )
+            || ( isset( $this->dynamicProperties[$property] ) && isset( $this->$property ) );
     }
 
     /**
@@ -265,16 +267,20 @@ abstract class Model implements Observable, ModelInterface
      * Key is property name and value is property value.
      *
      * @internal
-     * @return array
+     * @param string|null $property Optional, lets you specify to only return one property by name
+     * @return array|mixed Always returns array if $property is null, else value of property if found or null
      */
-    public function getState()
+    public function getState( $property = null )
     {
         $arr = array();
         foreach ( $this as $name => $value )
         {
-            $arr[$name] = $value;
+            if ( $property === $name )
+                return $value;
+            else if ( $property === null )
+                $arr[$name] = $value;
         }
-        return $arr;
+        return $property === null ? $arr: null;
     }
 
     /**

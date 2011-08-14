@@ -8,8 +8,9 @@
  */
 
 namespace ezp\Content\Type;
-use ezp\Base\AbstractModel,
-    ezp\Base\TypeCollection;
+use ezp\Base\Model,
+    ezp\Base\Collection\Type as TypeCollection,
+    ezp\Persistence\Content\Type\Group as GroupValue;
 
 /**
  * Group class ( Content Class Group )
@@ -17,47 +18,58 @@ use ezp\Base\AbstractModel,
  *
  * @property-read int $id
  * @property-read int $version
- * @property-read string $name
- * @property-read Type[] $contentTypes
+ * @property string $name
+ * @property string $description
+ * @property string $identifier
+ * @property mixed $created
+ * @property string $creatorId
+ * @property mixed $modified
+ * @property string $modifierId
+ * @property-read \ezp\Content\Type[] $types
  */
-class Group extends AbstractModel
+class Group extends Model
 {
     /**
-     * @var array Readable of properties on this object
+     * @var array List of read/Write VO properties on this object
      */
-    protected $readableProperties = array(
+    protected $readWriteProperties = array(
         'id' => false,
         'version' => false,
-        'name' => false,
-        //'identifier' => true,
-        'contentTypes' => false,
+        'name' => true,
+        'description' => true,
+        'identifier' => true,
+        'created' => true,
+        'creatorId' => true,
+        'modified' => true,
+        'modifierId' => true,
     );
 
     /**
-     * @var int
+     * @var array List of dynamic properties on this object
      */
-    protected $id;
+    protected $dynamicProperties = array(
+        'types' => true,
+    );
 
     /**
-     * @var string
+     * @var \ezp\Content\Type[]
      */
-    public $name;
+    protected $types;
 
     /**
-     * @var Type[]
+     * Construct object with all internal objects
      */
-    protected $contentTypes;
-
     public function __construct()
     {
-        $this->contentTypes = new TypeCollection( 'ezp\\Content\\Type' );
+        $this->properties = new GroupValue();
+        $this->types = new TypeCollection( 'ezp\\Content\\Type' );
     }
 
     /**
-     * @return string
+     * @return Type[]
      */
-    public function __toString()
+    public function getTypes()
     {
-        return $this->name;
+        return $this->types;
     }
 }

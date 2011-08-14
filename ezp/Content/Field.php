@@ -8,24 +8,34 @@
  */
 
 namespace ezp\Content;
-use ezp\Base\Observable,
-    ezp\Base\Observer,
-    ezp\Base\AbstractModel,
-    ezp\Content\Type\Field as FieldDefinition;
+use ezp\Base\Model,
+    ezp\Content\Version,
+    ezp\Content\Type\FieldDefinition,
+    ezp\Persistence\Content\Field as FieldVO;
 
 /**
  * This class represents a Content's field
  *
+ * @property-read mixed $id
+ * @property-ready string $type
+ * @property-read FieldValue $value
+ * @property string $type
+ * @property mixed $language
+ * @property-read int $versionNo
+ * @property-read \ezp\Content\Version $version
+ * @property-read \ezp\Content\Type\FieldDefinition $fieldDefinition
  */
-abstract class Field extends AbstractModel implements Observer
+class Field extends Model
 {
     /**
      * @var array Readable of properties on this object
      */
-    protected $readableProperties = array(
+    protected $readWriteProperties = array(
         'id' => false,
-        'languageCode' => true,
-        'fieldTypeString' => true,
+        'type' => false,
+        'value' => true,
+        'language' => true,
+        'versionNo' => false,
     );
 
     /**
@@ -37,47 +47,36 @@ abstract class Field extends AbstractModel implements Observer
     );
 
     /**
-     * @var int
-     */
-    protected $id = 0;
-
-    /**
-     * @var string
-     */
-    protected $languageCode = '';
-
-    /**
-     * @var string
-     */
-    protected $fieldTypeString = '';
-
-    /**
-     * @var Version
+     * @var \ezp\Content\Version
      */
     protected $version;
 
     /**
-     * @var FieldDefinition
+     * @var \ezp\Content\Type\FieldDefinition
      */
     protected $fieldDefinition;
 
     /**
      * Constructor, sets up properties
      *
-     * @param Version $contentVersion
-     * @param FieldDefinition $fieldDefinition
+     * @param \ezp\Content\Version $contentVersion
+     * @param \ezp\Content\Type\FieldDefinition $fieldDefinition
      */
     public function __construct( Version $contentVersion, FieldDefinition $fieldDefinition )
     {
         $this->version = $contentVersion;
         $this->fieldDefinition = $fieldDefinition;
-        $this->fieldTypeString = $fieldDefinition->fieldTypeString;
+        $this->properties = new FieldVO( array(
+                                               'type' => $fieldDefinition->fieldType,
+                                               'fieldDefinitionId' => $fieldDefinition->id,
+                                               'value' => $fieldDefinition->defaultValue,
+                                           ) );
     }
 
     /**
      * Return content version object
      *
-     * @return Version
+     * @return \ezp\Content\Version
      */
     protected function getVersion()
     {
@@ -87,34 +86,11 @@ abstract class Field extends AbstractModel implements Observer
     /**
      * Return content type object
      *
-     * @return FieldDefinition
+     * @return \ezp\Content\Type\FieldDefinition
      */
     protected function getFieldDefinition()
     {
         return $this->fieldDefinition;
-    }
-
-    /**
-     * Called when subject has been updated
-     *
-     * @param Observable $subject
-     * @param string $event
-     * @return ContentField
-     */
-    public function update( Observable $subject, $event = 'update' )
-    {
-        if ( $subject instanceof Version )
-        {
-            return $this->notify( $event );
-        }
-    }
-
-    /**
-     * @return string
-     */
-    public function __toString()
-    {
-        return $this->fieldTypeString;
     }
 }
 

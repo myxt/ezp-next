@@ -47,23 +47,8 @@ class LocationHandlerTest extends TestCase
     {
         $dbHandler = $this->getDatabaseHandler();
         return new Handler(
-            $this->contentHandler = $this->getMock(
-                'ezp\\Persistence\\Storage\\Legacy\\Content\\Handler',
-                array(),
-                array(),
-                '',
-                false
-            ),
             $this->locationGateway = $this->getMock( 'ezp\\Persistence\\Storage\\Legacy\\Content\\Location\\Gateway' )
         );
-    }
-
-    protected function getContentObject()
-    {
-        $contentObject = new \ezp\Persistence\Content();
-        $contentObject->id = 68;
-
-        return $contentObject;
     }
 
     public static function getLoadLocationValues()
@@ -172,45 +157,6 @@ class LocationHandlerTest extends TestCase
         $handler->move( 69, 77 );
     }
 
-    public function testMoveSubtreeModificationTimeUpdate()
-    {
-        $handler = $this->getLocationHandler();
-
-        $this->locationGateway
-            ->expects( $this->at( 0 ) )
-            ->method( 'getBasicNodeData' )
-            ->with( 69 )
-            ->will(
-                $this->returnValue(
-                    array(
-                        'node_id' => 69,
-                        'path_string' => '/1/2/69/',
-                        'contentobject_id' => 67,
-                    )
-                )
-            );
-
-        $this->locationGateway
-            ->expects( $this->at( 1 ) )
-            ->method( 'getBasicNodeData' )
-            ->with( 77 )
-            ->will(
-                $this->returnValue(
-                    array(
-                        'node_id' => 77,
-                        'path_string' => '/1/2/77/',
-                    )
-                )
-            );
-
-        $this->locationGateway
-            ->expects( $this->once() )
-            ->method( 'updateSubtreeModificationTime' )
-            ->with( '/1/2/77/69/' );
-
-        $handler->move( 69, 77 );
-    }
-
     public function testHideUpdateHidden()
     {
         $handler = $this->getLocationHandler();
@@ -232,32 +178,6 @@ class LocationHandlerTest extends TestCase
         $this->locationGateway
             ->expects( $this->once() )
             ->method( 'hideSubtree' )
-            ->with( '/1/2/69/' );
-
-        $handler->hide( 69 );
-    }
-
-    public function testHideSubtreeModificationTimeUpdate()
-    {
-        $handler = $this->getLocationHandler();
-
-        $this->locationGateway
-            ->expects( $this->at( 0 ) )
-            ->method( 'getBasicNodeData' )
-            ->with( 69 )
-            ->will(
-                $this->returnValue(
-                    array(
-                        'node_id' => 69,
-                        'path_string' => '/1/2/69/',
-                        'contentobject_id' => 67,
-                    )
-                )
-            );
-
-        $this->locationGateway
-            ->expects( $this->once() )
-            ->method( 'updateSubtreeModificationTime' )
             ->with( '/1/2/69/' );
 
         $handler->hide( 69 );
@@ -292,32 +212,6 @@ class LocationHandlerTest extends TestCase
         $handler->unhide( 69 );
     }
 
-    public function testHideUnhideSubtreeModificationTimeUpdate()
-    {
-        $handler = $this->getLocationHandler();
-
-        $this->locationGateway
-            ->expects( $this->at( 0 ) )
-            ->method( 'getBasicNodeData' )
-            ->with( 69 )
-            ->will(
-                $this->returnValue(
-                    array(
-                        'node_id' => 69,
-                        'path_string' => '/1/2/69/',
-                        'contentobject_id' => 67,
-                    )
-                )
-            );
-
-        $this->locationGateway
-            ->expects( $this->once() )
-            ->method( 'updateSubtreeModificationTime' )
-            ->with( '/1/2/69/' );
-
-        $handler->unhide( 69 );
-    }
-
     public function testSwapLocations()
     {
         $handler = $this->getLocationHandler();
@@ -330,89 +224,11 @@ class LocationHandlerTest extends TestCase
         $handler->swap( 70, 78 );
     }
 
-    public function testSwapLocationsSubtreeModificationTimeUpdate()
-    {
-        $handler = $this->getLocationHandler();
-
-        $this->locationGateway
-            ->expects( $this->at( 1 ) )
-            ->method( 'getBasicNodeData' )
-            ->with( 70 )
-            ->will(
-                $this->returnValue(
-                    array(
-                        'node_id' => 70,
-                        'path_string' => '/1/2/69/70/',
-                    )
-                )
-            );
-
-        $this->locationGateway
-            ->expects( $this->at( 2 ) )
-            ->method( 'updateSubtreeModificationTime' )
-            ->with( '/1/2/69/' );
-
-        $this->locationGateway
-            ->expects( $this->at( 3 ) )
-            ->method( 'getBasicNodeData' )
-            ->with( 78 )
-            ->will(
-                $this->returnValue(
-                    array(
-                        'node_id' => 78,
-                        'path_string' => '/1/2/77/78/',
-                    )
-                )
-            );
-
-        $this->locationGateway
-            ->expects( $this->at( 4 ) )
-            ->method( 'updateSubtreeModificationTime' )
-            ->with( '/1/2/77/' );
-
-        $handler->swap( 70, 78 );
-    }
-
-    public function testUpdatePriority()
-    {
-        $handler = $this->getLocationHandler();
-
-        $this->locationGateway
-            ->expects( $this->once() )
-            ->method( 'updatePriority' )
-            ->with( 70, 23 );
-
-        $handler->updatePriority( 70, 23 );
-    }
-
-    public function testUpdatePrioritySubtreeModificationTimeUpdate()
-    {
-        $handler = $this->getLocationHandler();
-
-        $this->locationGateway
-            ->expects( $this->once() )
-            ->method( 'getBasicNodeData' )
-            ->with( 70 )
-            ->will(
-                $this->returnValue(
-                    array(
-                        'node_id' => 70,
-                        'path_string' => '/1/2/69/70/',
-                    )
-                )
-            );
-
-        $this->locationGateway
-            ->expects( $this->once() )
-            ->method( 'updateSubtreeModificationTime' )
-            ->with( '/1/2/69/' );
-
-        $handler->updatePriority( 70, 23 );
-    }
-
     public function testCreateLocation()
     {
         $handler = $this->getLocationHandler();
+
+        $createStruct = new CreateStruct();
 
         $this->locationGateway
             ->expects( $this->once() )
@@ -427,49 +243,12 @@ class LocationHandlerTest extends TestCase
                 )
             );
 
-        $this->contentHandler
-            ->expects( $this->once() )
-            ->method( 'load' )
-            ->with( 68 )
-            ->will( $this->returnValue( $content = $this->getContentObject() ) );
-
         $this->locationGateway
             ->expects( $this->once() )
             ->method( 'createLocation' )
-            ->with( $content, $parentInfo );
+            ->with( $createStruct, $parentInfo );
 
-        $handler->createLocation( new CreateStruct( array( 'contentId' => 68 ) ), 77 );
-    }
-
-    public function testCreateLocationSubtreeModificationTimeUpdate()
-    {
-        $handler = $this->getLocationHandler();
-
-        $this->locationGateway
-            ->expects( $this->once() )
-            ->method( 'getBasicNodeData' )
-            ->with( 77 )
-            ->will(
-                $this->returnValue(
-                    array(
-                        'node_id' => 77,
-                        'path_string' => '/1/2/77/',
-                    )
-                )
-            );
-
-        $this->contentHandler
-            ->expects( $this->once() )
-            ->method( 'load' )
-            ->with( 68 )
-            ->will( $this->returnValue( $this->getContentObject() ) );
-
-        $this->locationGateway
-            ->expects( $this->once() )
-            ->method( 'updateSubtreeModificationTime' )
-            ->with( '/1/2/77/' );
-
-        $handler->createLocation( new CreateStruct( array( 'contentId' => 68 ) ), 77 );
+        $handler->createLocation( $createStruct, 77 );
     }
 
     public function testTrashSubtree()
@@ -498,7 +277,7 @@ class LocationHandlerTest extends TestCase
         $handler->trashSubtree( 69 );
     }
 
-    public function testTrashSubtreeSubtreeModificationTimeUpdate()
+    public function testMarkSubtreeModified()
     {
         $handler = $this->getLocationHandler();
 
@@ -517,10 +296,10 @@ class LocationHandlerTest extends TestCase
             );
 
         $this->locationGateway
-            ->expects( $this->once() )
+            ->expects( $this->at( 1 ) )
             ->method( 'updateSubtreeModificationTime' )
-            ->with( '/1/2/' );
+            ->with( '/1/2/69/' );
 
-        $handler->trashSubtree( 69 );
+        $handler->markSubtreeModified( 69 );
     }
 }

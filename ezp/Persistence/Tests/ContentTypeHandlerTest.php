@@ -14,7 +14,8 @@ use ezp\Persistence\Content\Type,
     ezp\Persistence\Content\Type\Group\UpdateStruct as GroupUpdateStruct,
     ezp\Persistence\Content\Type\FieldDefinition,
     ezp\Persistence\Content\Type\CreateStruct,
-    ezp\Persistence\Content\Type\UpdateStruct;
+    ezp\Persistence\Content\Type\UpdateStruct,
+    ezp\Base\Exception\NotFound;
 
 /**
  * Test case for SectionHandler using in memory storage.
@@ -23,19 +24,104 @@ use ezp\Persistence\Content\Type,
 class ContentTypeHandlerTest extends HandlerTest
 {
     /**
+     * Test create group function
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::createGroup
+     */
+    public function testCreateGroup()
+    {
+        $group = $this->repositoryHandler->ContentTypeHandler()->createGroup( $this->getGroupCreateStruct() );
+        $this->assertTrue( $group instanceof Group );
+        $this->assertEquals( 2, $group->id );
+        $this->assertEquals( array( 'eng-GB' => 'Media' ), $group->name );
+    }
+
+    /**
+     * Test update group function
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::updateGroup
+     */
+    public function testUpdateGroup()
+    {
+        $struct = new GroupUpdateStruct();
+        $struct->id = 1;
+        $struct->modified = time();
+        $struct->modifierId = 14;
+        $struct->name = array( 'eng-GB' => 'Content2' );
+        $struct->description = array( 'eng-GB' => 'TestTest' );
+        $struct->identifier = 'content2';
+        $this->repositoryHandler->ContentTypeHandler()->updateGroup( $struct );
+        $group = $this->repositoryHandler->ContentTypeHandler()->loadGroup( 1 );
+        $this->assertEquals( 1, $group->id );
+        $this->assertEquals( array( 'eng-GB' => 'Content2' ), $group->name );
+    }
+
+    /**
+     * Test delete group function
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::deleteGroup
+     */
+    public function testDeleteGroup()
+    {
+        $this->repositoryHandler->ContentTypeHandler()->deleteGroup( 1 );
+
+        try
+        {
+            $this->repositoryHandler->ContentTypeHandler()->loadGroup( 1 );
+            $this->fail( "Group not deleted correctly" );
+        }
+        catch ( NotFound $e )
+        {
+        }
+
+        $this->assertEquals(
+            array(),
+            $this->repositoryHandler->ContentTypeHandler()->load( 1 )->groupIds
+        );
+    }
+
+    /**
+     * Test load group function
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::loadGroup
+     */
+    public function testLoadGroup()
+    {
+        $obj = $this->repositoryHandler->ContentTypeHandler()->loadGroup( 1 );
+        $this->assertTrue( $obj instanceof Group );
+        $this->assertEquals( 1, $obj->id );
+        $this->assertEquals( array( 'eng-GB' => 'Content' ), $obj->name );
+    }
+
+    /**
+     * Test load all groups function
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::loadAllGroups
+     */
+    public function testLoadAllGroups()
+    {
+        $list = $this->repositoryHandler->ContentTypeHandler()->loadAllGroups();
+        $this->assertEquals( 1, count( $list ) );
+        $this->assertTrue( $list[0] instanceof Group );
+        $this->assertEquals( 1, $list[0]->id );
+        $this->assertEquals( array( 'eng-GB' => 'Content' ), $list[0]->name );
+    }
+
+    /**
      * Test load function
      *
      * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::loadContentTypes
      */
     public function testLoadByGroup()
     {
-        $obj = $this->repositoryHandler->ContentTypeHandler()->loadContentTypes( 1, 0 );
-        $this->assertTrue( $obj instanceof Type );
-        $this->assertEquals( 1, $obj->id );
-        $this->assertEquals( 'folder', $obj->identifier );
+        $list = $this->repositoryHandler->ContentTypeHandler()->loadContentTypes( 1, 0 );
+        $this->assertEquals( 1, count( $list ) );
+        $this->assertTrue( $list[0] instanceof Type );
+        $this->assertEquals( 1, $list[0]->id );
+        $this->assertEquals( 'folder', $list[0]->identifier );
 
-        $obj = $this->repositoryHandler->ContentTypeHandler()->loadContentTypes( 2, 0 );
-        $this->assertNull( $obj );
+        $list = $this->repositoryHandler->ContentTypeHandler()->loadContentTypes( 2, 0 );
+        $this->assertEquals( array(), $list );
     }
 
     /**
@@ -49,7 +135,8 @@ class ContentTypeHandlerTest extends HandlerTest
         $this->assertTrue( $obj instanceof Type );
         $this->assertEquals( 1, $obj->id );
         $this->assertEquals( 'folder', $obj->identifier );
-        $this->assertEquals( array(), $obj->fieldDefinitions );
+        $this->assertEquals( 1, count( $obj->fieldDefinitions ) );
+        $this->assertEquals( 'Name', $obj->fieldDefinitions[0]->name['eng-GB'] );
 
         $obj = $this->repositoryHandler->ContentTypeHandler()->load( 2, 0 );
         $this->assertNull( $obj );
@@ -87,7 +174,7 @@ class ContentTypeHandlerTest extends HandlerTest
         $this->assertEquals( 2, $obj->id );
         $this->assertEquals( 'article', $obj->identifier );
         $this->assertEquals( "<short_title|title>", $obj->nameSchema );
-        $field->id = 1;
+        $field->id = $obj->fieldDefinitions[0]->id;
         $this->assertEquals( array( $field ), $obj->fieldDefinitions );
     }
 
@@ -116,9 +203,45 @@ class ContentTypeHandlerTest extends HandlerTest
     public function testDelete()
     {
         $handler = $this->repositoryHandler->ContentTypeHandler();
-
         $handler->delete( 1, 0 );
         $this->assertNull( $handler->load( 1, 0 ) );
+    }
+
+    /**
+     * Test link function
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::link
+     */
+    public function testLink()
+    {
+        $group = $this->getGroupCreateStruct();
+        $handler = $this->repositoryHandler->ContentTypeHandler();
+        $vo = $handler->createGroup( $group );
+        $handler->link( $vo->id, 1, 0 );
+        $type = $handler->load( 1, 0 );
+        $this->assertEquals( array( 1, $vo->id ), $type->groupIds );
+    }
+
+    /**
+     * Test link function
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::link
+     * @expectedException \ezp\Base\Exception\NotFound
+     */
+    public function testLinkMissingGroup()
+    {
+        $this->repositoryHandler->contentTypeHandler()->link( 64, 1, 0 );
+    }
+
+    /**
+     * Test link function
+     *
+     * @covers ezp\Persistence\Tests\InMemoryEngine\ContentTypeHandler::link
+     * @expectedException \ezp\Base\Exception\NotFound
+     */
+    public function testLinkMissingType()
+    {
+        $this->repositoryHandler->contentTypeHandler()->link( 1, 64, 0 );
     }
 
     /**
@@ -137,7 +260,7 @@ class ContentTypeHandlerTest extends HandlerTest
         $struct->initialLanguageId = 2;
         $struct->nameSchema = "<short_title|title>";
         $struct->fieldDefinitions = array();
-        $struct->contentTypeGroupIds = array( 1 );
+        $struct->groupIds = array( 1 );
         return $struct;
     }
 
@@ -159,6 +282,20 @@ class ContentTypeHandlerTest extends HandlerTest
     }
 
     /**
+     * @return \ezp\Persistence\Content\Type\Group\CreateStruct
+     */
+    protected function getGroupCreateStruct()
+    {
+        $struct = new GroupCreateStruct();
+        $struct->created = $struct->modified = time();
+        $struct->creatorId = $struct->modifierId = 14;
+        $struct->name = array( 'eng-GB' => 'Media' );
+        $struct->description = array( 'eng-GB' => 'Group for media content types' );
+        $struct->identifier = 'media';
+        return $struct;
+    }
+
+    /**
      * @return \ezp\Persistence\Content\Type\FieldDefinition
      */
     protected function getTypeFieldDefinition()
@@ -171,7 +308,7 @@ class ContentTypeHandlerTest extends HandlerTest
         $field->isInfoCollector = false;
         $field->defaultValue = 'New Article';
         $field->name = array( 'eng-GB' => "Title" );
-        $field->description = array( 'eng-GB' => "Article title, used for headers, and url if short_title is empty" );
+        $field->description = array( 'eng-GB' => "Title, used for headers, and url if short_title is empty" );
         return $field;
     }
 }

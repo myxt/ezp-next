@@ -129,12 +129,12 @@ class Type extends ValueObject
      *
      * @var mixed[]
      */
-    public $contentTypeGroupIds = array();
+    public $groupIds = array();
 
     /**
      * Content fields in this type
      *
-     * @var Type\FieldDefinition[]
+     * @var \ezp\Persistence\Content\Type\FieldDefinition[]
      */
     public $fieldDefinitions = array();
 }

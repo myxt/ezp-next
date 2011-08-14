@@ -184,11 +184,11 @@ class Repository
      * Store a generic domain object or collection of domain objects in the repository
      *
      * @internal
-     * @param AbstractModel $object
+     * @param \ezp\Base\Model $object
      * @throws DomainException If object is of wrong type
      * @throws RuntimeException If errors occurred in storage engine
      */
-    public function store( AbstractModel $object )
+    public function store( Model $object )
     {
     }
 
@@ -196,11 +196,11 @@ class Repository
      * Delete a generic domain object or collection of domain objects in the repository
      *
      * @internal
-     * @param AbstractModel $object
+     * @param \ezp\Base\Model $object
      * @throws DomainException If object is of wrong type
      * @throws RuntimeException If errors occurred in storage engine
      */
-    public function delete( AbstractModel $object )
+    public function delete( Model $object )
     {
     }
 
@@ -211,7 +211,7 @@ class Repository
      *
      * @internal
      * @param RepositoryCriteriaInterface $criteria
-     * @return AbstractModel[]
+     * @return \ezp\Base\Model[]
      * @throws \InvalidArgumentException
      */
     public function find( RepositoryCriteriaInterface $criteria )
@@ -227,7 +227,7 @@ class Repository
      * @internal
      * @param string $type
      * @param int $id
-     * @return AbstractModel
+     * @return \ezp\Base\Model
      * @throws \InvalidArgumentException
      */
     public function load( $type, $id )

@@ -70,6 +70,8 @@ class Service extends BaseService
      */
     public function deleteGroup( $groupId )
     {
+        if ( $do = $this->storage->get( 'ezp\\Content\\Type\\Group', array( 'id' => $groupId ) ) )
+            $this->storage->remove( $do );
         $this->handler->contentTypeHandler()->deleteGroup( $groupId  );
     }
 
@@ -82,6 +84,8 @@ class Service extends BaseService
      */
     public function loadGroup( $groupId )
     {
+        if ( $do = $this->storage->get( 'ezp\\Content\\Type\\Group', array( 'id' => $groupId ) ) )
+            return $do;
         $vo = $this->handler->contentTypeHandler()->loadGroup( $groupId );
         if ( !$vo )
             throw new NotFound( 'Content\\Type\\Group', $groupId );
@@ -97,7 +101,12 @@ class Service extends BaseService
     {
         $list = $this->handler->contentTypeHandler()->loadAllGroups();
         foreach ( $list as $key => $vo )
-            $list[$key] = $this->buildGroup( $vo );
+        {
+            if ( $do = $this->storage->get( 'ezp\\Content\\Type\\Group', array( 'id' => $vo->id ) ) )
+                $list[$key] = $do;
+            else
+                $list[$key] = $this->buildGroup( $vo );
+        }
 
         return $list;
     }
@@ -144,6 +153,8 @@ class Service extends BaseService
      */
     public function delete( $typeId, $status = TypeValue::STATUS_DEFINED )
     {
+        if ( $do = $this->storage->get( 'ezp\\Content\\Type', array( 'id' => $typeId, 'status' => $status ) ) )
+            $this->storage->remove( $do );
         $this->handler->contentTypeHandler()->delete( $typeId, $status );
     }
 
@@ -157,6 +168,8 @@ class Service extends BaseService
      */
     public function load( $typeId, $status = TypeValue::STATUS_DEFINED )
     {
+        if ( $do = $this->storage->get( 'ezp\\Content\\Type', array( 'id' => $typeId, 'status' => $status ) ) )
+            return $do;
         return $this->buildType( $this->handler->contentTypeHandler()->load( $typeId, $status ) );
     }
 
@@ -171,7 +184,12 @@ class Service extends BaseService
     {
         $list = $this->handler->contentTypeHandler()->loadContentTypes( $groupId, $status );
         foreach ( $list as $key => $vo )
-            $list[$key] = $this->buildType( $vo );
+        {
+            if ( $do = $this->storage->get( 'ezp\\Content\\Type', array( 'id' => $vo->id, 'status' => $vo->status ) ) )
+                $list[$key] = $do;
+            else
+                $list[$key] = $this->buildType( $vo );
+        }
 
         return $list;
     }
@@ -216,6 +234,14 @@ class Service extends BaseService
     public function unlink( Type $type, Group $group )
     {
         $this->handler->contentTypeHandler()->unlink( $group->id, $type->id, $type->status );
+        foreach ( $type->groupIds as $key => $value )
+        {
+            if ( $value === $group->id )
+            {
+                //$type->groups->offsetUnset( $key ); does not work
+                break;
+            }
+        }
     }
 
     /**
@@ -228,6 +254,8 @@ class Service extends BaseService
     public function link( Type $type, Group $group  )
     {
         $this->handler->contentTypeHandler()->link( $group->id, $type->id, $type->status );
+        $type->groups[] = $group;
+        $type->getState( 'properties' )->groupIds[] = $group->id;
     }
 
     /**
@@ -248,6 +276,7 @@ class Service extends BaseService
             $type->status,
             $field->getState( "properties" )
         );
+        $type->fields[] = $field;
     }
 
     /**
@@ -305,6 +334,7 @@ class Service extends BaseService
                 )
             )
         );
+        $this->storage->add( $type, array( 'id' => $vo->id, 'status' => $vo->status ) );
         return $type;
     }
 
@@ -326,6 +356,7 @@ class Service extends BaseService
                 )
             )
         );
+        $this->storage->add( $group, array( 'id' => $vo->id ) );
         return $group;
     }
 }

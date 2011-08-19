@@ -13,7 +13,6 @@ use ezp\Base\Exception,
     ezp\Content\Location,
     ezp\Content\Proxy,
     ezp\Content\Section,
-    ezp\Content\ContainerProperty,
     ezp\Base\Exception\NotFound,
     ezp\Base\Exception\InvalidArgumentType,
     ezp\Base\Exception\Logic,
@@ -88,7 +87,7 @@ class Service extends BaseService
         $struct->invisible = ( $location->parent->invisible == true ) || ( $location->parent->hidden == true );
         $struct->contentId = $location->contentId;
 
-        $vo = $this->handler->locationHandler()->createLocation( $struct, $location->parentId );
+        $vo = $this->handler->locationHandler()->createLocation( $struct );
         $location->setState( array( 'properties' => $vo ) );
 
         // repo/storage stuff
@@ -229,16 +228,18 @@ class Service extends BaseService
     }
 
     /**
-     * Assigns $section to the contents hold by $startingPoint location and
-     * all contents hold by descendants location of $startingPoint
+     * Assigns $section to the contents held by $startingPoint location and
+     * all contents held by descendants location of $startingPoint
      *
      * @param \ezp\Content\Location $startingPoint
-     * @param Section $section
+     * @param \ezp\Content\Section $section
      * @return void
      * @throws \ezp\Base\Exception\Validation If a validation problem has been found;
      */
     public function assignSection( Location $startingPoint, Section $section )
     {
+        $this->handler->locationHandler()->setSectionForSubtree( $startingPoint->id, $section->id );
+        $this->refreshDomainObject( $startingPoint );
     }
 
     /**
@@ -276,19 +277,10 @@ class Service extends BaseService
         );
         // Check if associated content also needs to be refreshed
         if ( $vo->contentId != $location->contentId )
+        {
             $newState['content'] = new Proxy( $this->repository->getContentService(), $vo->contentId );
+        }
         $location->setState( $newState );
-
-        // Container property (default sorting)
-        $containerProperty = new ContainerProperty;
-        $location->containerProperties[] = $containerProperty->setState(
-            array(
-                'locationId' => $vo->id,
-                'sortField' => $vo->sortField,
-                'sortOrder' => $vo->sortOrder,
-                'location' => $location
-            )
-        );
 
         return $location;
     }

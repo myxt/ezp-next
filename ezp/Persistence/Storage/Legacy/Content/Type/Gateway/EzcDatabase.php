@@ -226,8 +226,8 @@ class EzcDatabase extends Gateway
     protected function insertTypeNameData( Type $type )
     {
         $alwaysAvailable = null;
-        $languages       = $type->name;
-        $mapping         = $this->getLanguageMapping();
+        $languages = $type->name;
+        $mapping = $this->getLanguageMapping();
         if ( isset( $languages['always-available'] ) )
         {
             $alwaysAvailable = $languages['always-available'];
@@ -240,7 +240,7 @@ class EzcDatabase extends Gateway
             $query
                 ->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass_name' ) )
                 ->set( 'contentclass_id', $query->bindValue( $type->id ) )
-                ->set( 'contentclass_version', $query->bindValue( $type->version ) )
+                ->set( 'contentclass_version', $query->bindValue( $type->status ) )
                 ->set( 'language_id', $query->bindValue( $mapping[$language] | ( $alwaysAvailable === $language ? 1 : 0 ) ) )
                 ->set( 'language_locale', $query->bindValue( $language ) )
                 ->set( 'name', $query->bindValue( $name ) );
@@ -261,7 +261,7 @@ class EzcDatabase extends Gateway
         $q->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass' ) );
         $q->set(
             $this->dbHandler->quoteColumn( 'version' ),
-            $q->bindValue( $type->version, null, \PDO::PARAM_INT )
+            $q->bindValue( $type->status, null, \PDO::PARAM_INT )
         )->set(
             $this->dbHandler->quoteColumn( 'created' ),
             $q->bindValue( $type->created, null, \PDO::PARAM_INT )
@@ -328,27 +328,28 @@ class EzcDatabase extends Gateway
      *
      * @param mixed $groupId
      * @param mixed $typeId
-     * @param int $version
+     * @param int $status
      * @return void
      */
-    public function insertGroupAssignement( $groupId, $typeId, $version )
+    public function insertGroupAssignement( $groupId, $typeId, $status )
     {
         $group = $this->loadGroupData( $groupId );
 
         $q = $this->dbHandler->createInsertQuery();
-        $q->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' ) )
-            ->set(
-                $this->dbHandler->quoteColumn( 'contentclass_id' ),
-                $q->bindValue( $typeId, null, \PDO::PARAM_INT )
-            )->set(
-                $this->dbHandler->quoteColumn( 'contentclass_version' ),
-                $q->bindValue( $version, null, \PDO::PARAM_INT )
-            )->set(
-                $this->dbHandler->quoteColumn( 'group_id' ),
-                $q->bindValue( $groupId, null, \PDO::PARAM_INT )
-            )->set(
-                $this->dbHandler->quoteColumn( 'group_name' ),
-                $q->bindValue( $group['name'] )
+        $q->insertInto(
+            $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' )
+        )->set(
+            $this->dbHandler->quoteColumn( 'contentclass_id' ),
+            $q->bindValue( $typeId, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'contentclass_version' ),
+            $q->bindValue( $status, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'group_id' ),
+            $q->bindValue( $groupId, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'group_name' ),
+            $q->bindValue( $group['name'] )
         );
 
         $stmt = $q->prepare();
@@ -360,28 +361,29 @@ class EzcDatabase extends Gateway
      *
      * @param mixed $groupId
      * @param mixed $typeId
-     * @param int $version
+     * @param int $status
      * @return void
      */
-    public function deleteGroupAssignement( $groupId, $typeId, $version )
+    public function deleteGroupAssignement( $groupId, $typeId, $status )
     {
         $q = $this->dbHandler->createDeleteQuery();
-        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' ) )
-            ->where(
-                $q->expr->lAnd(
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentclass_id' ),
-                        $q->bindValue( $typeId, null, \PDO::PARAM_INT )
-                    ),
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentclass_version' ),
-                        $q->bindValue( $version, null, \PDO::PARAM_INT )
-                    ),
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'group_id' ),
-                        $q->bindValue( $groupId, null, \PDO::PARAM_INT )
-                    )
+        $q->deleteFrom(
+            $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' )
+        )->where(
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_id' ),
+                    $q->bindValue( $typeId, null, \PDO::PARAM_INT )
+                ),
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_version' ),
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
+                ),
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'group_id' ),
+                    $q->bindValue( $groupId, null, \PDO::PARAM_INT )
                 )
+            )
         );
         $stmt = $q->prepare();
         $stmt->execute();
@@ -427,7 +429,7 @@ class EzcDatabase extends Gateway
      * @todo What about fieldTypeConstraints and defaultValue?
      * @todo PDO->lastInsertId() might require a seq name (Oracle?).
      */
-    public function insertFieldDefinition( $typeId, $version, FieldDefinition $fieldDefinition )
+    public function insertFieldDefinition( $typeId, $status, FieldDefinition $fieldDefinition )
     {
         $q = $this->dbHandler->createInsertQuery();
         $q->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass_attribute' ) );
@@ -436,7 +438,7 @@ class EzcDatabase extends Gateway
             $q->bindValue( $typeId, null, \PDO::PARAM_INT )
         )->set(
             $this->dbHandler->quoteColumn( 'version' ),
-            $q->bindValue( $version, null, \PDO::PARAM_INT )
+            $q->bindValue( $status, null, \PDO::PARAM_INT )
         );
         $this->setCommonFieldColumns( $q, $fieldDefinition );
 
@@ -499,11 +501,11 @@ class EzcDatabase extends Gateway
      * Deletes a field definition.
      *
      * @param mixed $typeId
-     * @param int $version
+     * @param int $status
      * @param mixed $fieldDefinitionId
      * @return void
      */
-    public function deleteFieldDefinition( $typeId, $version, $fieldDefinitionId )
+    public function deleteFieldDefinition( $typeId, $status, $fieldDefinitionId )
     {
         $q = $this->dbHandler->createDeleteQuery();
         $q->deleteFrom(
@@ -516,7 +518,7 @@ class EzcDatabase extends Gateway
                 ),
                 $q->expr->eq(
                     $this->dbHandler->quoteColumn( 'version' ),
-                    $q->bindValue( $version, null, \PDO::PARAM_INT )
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
                 ),
                 // FIXME: Actually not needed
                 $q->expr->eq(
@@ -534,11 +536,11 @@ class EzcDatabase extends Gateway
      * Updates a $fieldDefinition for $typeId.
      *
      * @param mixed $typeId
-     * @param int $version
+     * @param int $status
      * @param FieldDefinition $fieldDefinition
      * @return void
      */
-    public function updateFieldDefinition( $typeId, $version, FieldDefinition $fieldDefinition )
+    public function updateFieldDefinition( $typeId, $status, FieldDefinition $fieldDefinition )
     {
         $q = $this->dbHandler->createUpdateQuery();
         $q
@@ -551,7 +553,7 @@ class EzcDatabase extends Gateway
                 ),
                 $q->expr->eq(
                     $this->dbHandler->quoteColumn( 'version' ),
-                    $q->bindValue( $version, null, \PDO::PARAM_INT )
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
                 ),
                 // FIXME: Actually not needed
                 $q->expr->eq(
@@ -569,11 +571,11 @@ class EzcDatabase extends Gateway
      * Update a type with $updateStruct.
      *
      * @param mixed $typeId
-     * @param int $version
+     * @param int $status
      * @param \ezp\Persistence\Content\Type\UpdateStruct $updateStruct
      * @return void
      */
-    public function updateType( $typeId, $version, UpdateStruct $updateStruct )
+    public function updateType( $typeId, $status, UpdateStruct $updateStruct )
     {
         $q = $this->dbHandler->createUpdateQuery();
         $q->update( $this->dbHandler->quoteTable( 'ezcontentclass' ) );
@@ -588,7 +590,7 @@ class EzcDatabase extends Gateway
                 ),
                 $q->expr->eq(
                     $this->dbHandler->quoteColumn( 'version' ),
-                    $q->bindValue( $version, null, \PDO::PARAM_INT )
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
                 )
             )
         );
@@ -598,13 +600,13 @@ class EzcDatabase extends Gateway
     }
 
     /**
-     * Loads an array with data about $typeId in $version.
+     * Loads an array with data about $typeId in $status.
      *
      * @param mixed $typeId
-     * @param int $version
+     * @param int $status
      * @return array(int=>array(string=>mixed)) Data rows.
      */
-    public function loadTypeData( $typeId, $version )
+    public function loadTypeData( $typeId, $status )
     {
         $q = $this->dbHandler->createSelectQuery();
 
@@ -675,7 +677,7 @@ class EzcDatabase extends Gateway
                 ),
                 $q->expr->eq(
                     $this->dbHandler->quoteColumn( 'version', 'ezcontentclass' ),
-                    $q->bindValue( $version )
+                    $q->bindValue( $status )
                 )
             )
         );
@@ -691,21 +693,22 @@ class EzcDatabase extends Gateway
      * @param mixed $typeId
      * @return void
      */
-    public function deleteFieldDefinitionsForType( $typeId, $version )
+    public function deleteFieldDefinitionsForType( $typeId, $status )
     {
         $q = $this->dbHandler->createDeleteQuery();
-        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclass_attribute' ) )
-            ->where(
-                $q->expr->lAnd(
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentclass_id' ),
-                        $q->bindValue( $typeId, null, \PDO::PARAM_INT )
-                    ),
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'version' ),
-                        $q->bindValue( $version, null, \PDO::PARAM_INT )
-                    )
+        $q->deleteFrom(
+            $this->dbHandler->quoteTable( 'ezcontentclass_attribute' )
+        )->where(
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_id' ),
+                    $q->bindValue( $typeId, null, \PDO::PARAM_INT )
+                ),
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version' ),
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
                 )
+            )
         );
         $stmt = $q->prepare();
         $stmt->execute();
@@ -719,21 +722,22 @@ class EzcDatabase extends Gateway
      * @param mixed $typeId
      * @return void
      */
-    public function deleteType( $typeId, $version )
+    public function deleteType( $typeId, $status )
     {
         $q = $this->dbHandler->createDeleteQuery();
-        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclass' ) )
-            ->where(
-                $q->expr->lAnd(
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'id' ),
-                        $q->bindValue( $typeId, null, \PDO::PARAM_INT )
-                    ),
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'version' ),
-                        $q->bindValue( $version, null, \PDO::PARAM_INT )
-                    )
+        $q->deleteFrom(
+            $this->dbHandler->quoteTable( 'ezcontentclass' )
+        )->where(
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'id' ),
+                    $q->bindValue( $typeId, null, \PDO::PARAM_INT )
+                ),
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version' ),
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
                 )
+            )
         );
         $stmt = $q->prepare();
         $stmt->execute();
@@ -745,21 +749,22 @@ class EzcDatabase extends Gateway
      * @param mixed $typeId
      * @return void
      */
-    public function deleteGroupAssignementsForType( $typeId, $version )
+    public function deleteGroupAssignementsForType( $typeId, $status )
     {
         $q = $this->dbHandler->createDeleteQuery();
-        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' ) )
-            ->where(
-                $q->expr->lAnd(
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentclass_id' ),
-                        $q->bindValue( $typeId, null, \PDO::PARAM_INT )
-                    ),
-                    $q->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentclass_version' ),
-                        $q->bindValue( $version, null, \PDO::PARAM_INT )
-                    )
+        $q->deleteFrom(
+            $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' )
+        )->where(
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_id' ),
+                    $q->bindValue( $typeId, null, \PDO::PARAM_INT )
+                ),
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_version' ),
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
                 )
+            )
         );
         $stmt = $q->prepare();
         $stmt->execute();

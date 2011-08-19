@@ -51,6 +51,7 @@ Conclusion
 ~~~~~~~~~~
 
 
+
 Return type boolean vs. Exceptions
 ----------------------------------
 
@@ -64,25 +65,27 @@ Conclusion
 Initial feeling is that Exceptions should be defined for these methods.
 
 
-ezp\Persistence\Content->name
------------------------------
+
+
+Languages
+---------
 
 Summary
 ~~~~~~~
-Does not follow same format as other name/description fields that have several languages.
+Need API to deal with languages to be able to map language id's to languageCode
 
 Conclusion
 ~~~~~~~~~~
 
 
-VO / create struct / update struct OOP
---------------------------------------
+
+Translations
+------------
 
 Summary
 ~~~~~~~
-This objects have 95% similarities and should probably extend each other for code/doc reuse.
-Eg: VO (and update struct) could if possible extend createstruct and in most cases just add $id.
-NOTE: If done then api's that allow create struct should be checked to make sure it does not fail if it gets a VO.
+Need translation support in Content in DO and some changes to ContentHandler api to reflect
+translation needs and workflow(s).
 
 Conclusion
 ~~~~~~~~~~

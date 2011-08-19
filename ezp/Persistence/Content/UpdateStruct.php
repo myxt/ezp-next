@@ -16,13 +16,23 @@ use ezp\Persistence\ValueObject;
 class UpdateStruct extends ValueObject
 {
     /**
-     * @todo Which version is this?
-     * @var int
+     * @var int|string
      */
     public $id;
 
     /**
      * @var int
+     */
+    public $versionNo;
+
+    /**
+     * @var string[] Eg. array( 'eng-GB' => "New Article" )
+     */
+    public $name;
+
+    /**
+     * @var int Creator of the version
+     * @todo Rename to creatorId to be consistent
      */
     public $userId;
 

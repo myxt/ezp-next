@@ -36,20 +36,20 @@ abstract class Service
      *
      * @var \ezp\Base\ModelStorageInterface
      */
-    protected $objects;
+    protected $storage;
 
     /**
      * Setups service with reference to repository object that created it & corresponding handler
      *
      * @param \ezp\Base\Repository $repository
      * @param \ezp\Persistence\Repository\Handler $handler
-     * @param \ezp\Base\ModelStorageInterface $objects
+     * @param \ezp\Base\ModelStorageInterface $storage
      */
-    public function __construct( Repository $repository, Handler $handler, ModelStorageInterface $objects )
+    public function __construct( Repository $repository, Handler $handler, ModelStorageInterface $storage )
     {
         $this->repository = $repository;
         $this->handler = $handler;
-        $this->objects = $objects;
+        $this->storage = $storage;
     }
 
     /**

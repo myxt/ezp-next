@@ -159,6 +159,19 @@ abstract class Model implements Observable, ModelInterface
     }
 
     /**
+     * Destruct function called when object is unset
+     *
+     * Dispatches destruct event as well as un-setting observers
+     *
+     * @internal
+     */
+   public function __destruct()
+   {
+       $this->notify( 'destruct' );
+       $this->observers = array();
+   }
+
+    /**
      * Magic getter
      *
      * @param string $property Property name

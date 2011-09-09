@@ -19,11 +19,22 @@
     <testsuite name="ezp\Persistence\Storage\Legacy">
       <directory>ezp/Persistence/Storage/Legacy/Tests</directory>
     </testsuite>
+    <testsuite name="ezp\User">
+      <directory>ezp/User/Tests</directory>
+    </testsuite>
+    <testsuite name="ezp\Io">
+      <directory>ezp/Io/Tests</directory>
+    </testsuite>
   </testsuites>
   <filter>
     <whitelist>
       <directory suffix=".php">ezp</directory>
       <exclude>
+        <directory suffix=".php">ezp/Base/Tests</directory>
+        <directory suffix=".php">ezp/Content/Tests</directory>
+        <directory suffix=".php">ezp/Persistence/Tests</directory>
+        <directory suffix=".php">ezp/Users/Tests</directory>
+        <directory suffix=".php">ezp/Io/Tests</directory>
         <directory suffix=".php">ezp/Persistence/Storage/Legacy/Tests</directory>
         <directory suffix=".php">ezp/Stubs</directory>
         <file>ezp/index.php</file>

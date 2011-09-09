@@ -32,19 +32,20 @@ abstract class Gateway
      * Inserts a new version.
      *
      * @param Version $version
+     * @param bool $alwaysAvailable
      * @return int ID
      */
-    abstract public function insertVersion( Version $version );
+    abstract public function insertVersion( Version $version, $alwaysAvailable );
+
 
     /**
      * Updates an existing version
      *
-     * @param int|string $version
+     * @param int $version
      * @param int $versionNo
-     * @param int|string $userId
      * @return void
      */
-    abstract public function updateVersion( $version, $versionNo, $userId );
+    abstract public function updateVersion( $version, $versionNo );
 
     /**
      * Inserts a new field.
@@ -67,4 +68,79 @@ abstract class Gateway
      * @return void
      */
     abstract public function updateField( Field $field, StorageFieldValue $value );
+
+    /**
+     * Returns all version data for the given $contentId
+     *
+     * @param mixed $contentId
+     * @return string[][]
+     */
+    abstract public function listVersions( $contentId );
+
+    /**
+     * Returns all IDs for locations that refer to $contentId
+     *
+     * @param int $contentId
+     * @return int[]
+     * @TODO This method does hardly belong here. Maybe put it into
+     *       Location\Handler? But that hinders inter-operability.
+     */
+    abstract public function getAllLocationIds( $contentId );
+
+    /**
+     * Returns all field IDs of $contentId grouped by their type
+     *
+     * @param int $contentId
+     * @return int[][]
+     */
+    abstract public function getFieldIdsByType( $contentId );
+
+    /**
+     * Deletes relations to and from $contentId
+     *
+     * @param int $contentId
+     * @return void
+     */
+    abstract public function deleteRelations( $contentId );
+
+    /**
+     * Deletes the field with the given $fieldId
+     *
+     * @param int $fieldId
+     * @param int $version
+     * @return void
+     */
+    abstract public function deleteField( $fieldId, $version );
+
+    /**
+     * Deletes all fields of $contentId in all versions
+     *
+     * @param int $contentId
+     * @return void
+     */
+    abstract public function deleteFields( $contentId );
+
+    /**
+     * Deletes all versions of $contentId
+     *
+     * @param int $contentId
+     * @return void
+     */
+    abstract public function deleteVersions( $contentId );
+
+    /**
+     * Deletes all names of $contentId
+     *
+     * @param int $contentId
+     * @return void
+     */
+    abstract public function deleteNames( $contentId );
+
+    /**
+     * Deletes the actual content object referred to by $contentId
+     *
+     * @param int $contentId
+     * @return void
+     */
+    abstract public function deleteContent( $contentId );
 }

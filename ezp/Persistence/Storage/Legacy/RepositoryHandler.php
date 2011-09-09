@@ -45,6 +45,13 @@ class RepositoryHandler implements HandlerInterface
     protected $storageRegistry;
 
     /**
+     * Search handler
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Search\Handler
+     */
+    protected $searchHandler;
+
+    /**
      * Content type handler
      *
      * @var Content\Type\Handler
@@ -59,6 +66,13 @@ class RepositoryHandler implements HandlerInterface
     protected $locationHandler;
 
     /**
+     * Location mapper
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Location\Mapper
+     */
+    protected $locationMapper;
+
+    /**
      * User handler
      *
      * @var User\Handler
@@ -71,6 +85,34 @@ class RepositoryHandler implements HandlerInterface
      * @var mixed
      */
     protected $sectionHandler;
+
+    /**
+     * Content gateway
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Gateway
+     */
+    protected $contentGateway;
+
+    /**
+     * Language handler
+     *
+     * @var \ezp\Persistence\Content\Language\Handler
+     */
+    protected $languageHandler;
+
+    /**
+     * Language cache
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Language\Cache
+     */
+    protected $languageCache;
+
+    /**
+     * Language mask generator
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Language\MaskGenerator
+     */
+    protected $languageMaskGenerator;
 
     /**
      * Creates a new repository handler.
@@ -108,13 +150,50 @@ class RepositoryHandler implements HandlerInterface
         if ( !isset( $this->contentHandler ) )
         {
             $this->contentHandler = new Content\Handler(
-                new Content\Gateway\EzcDatabase( $this->dbHandler ),
+                $this->getContentGateway(),
                 $this->locationHandler(),
-                new Content\Mapper( $this->getFieldValueConverterRegistry() ),
+                new Content\Mapper(
+                    $this->getLocationMapper(),
+                    $this->getFieldValueConverterRegistry()
+                ),
                 new Content\StorageRegistry( $this->getStorageRegistry() )
             );
         }
         return $this->contentHandler;
+    }
+
+    /**
+     * Returns a content gateway
+     *
+     * @return \ezp\Persistence\Storage\Legacy\Content\Gateway
+     */
+    protected function getContentGateway()
+    {
+        if ( !isset( $this->contentGateway ) )
+        {
+            $this->contentGateway = new Content\Gateway\EzcDatabase(
+                $this->dbHandler,
+                new Content\Gateway\EzcDatabase\QueryBuilder( $this->dbHandler ),
+                $this->getLanguageMaskGenerator()
+            );
+        }
+        return $this->contentGateway;
+    }
+
+    /**
+     * Returns a language mask generator
+     *
+     * @return \ezp\Persistence\Storage\Legacy\Content\Language\MaskGenerator
+     */
+    protected function getLanguageMaskGenerator()
+    {
+        if ( !isset( $this->languageMaskGenerator ) )
+        {
+            $this->languageMaskGenerator = new Content\Language\MaskGenerator(
+                $this->getLanguageCache()
+            );
+        }
+        return $this->languageMaskGenerator;
     }
 
     /**
@@ -147,6 +226,104 @@ class RepositoryHandler implements HandlerInterface
     }
 
     /**
+     * Get a transformation processor for full text search normalization
+     *
+     * @return TransformationProcessor
+     */
+    protected function getTransformationProcessor()
+    {
+        $processor = new Content\Search\TransformationProcessor(
+            new Content\Search\TransformationParser(),
+            new Content\Search\TransformationPcreCompiler(
+                new Content\Search\Utf8Converter()
+            )
+        );
+
+        // @TODO: How do we get the path to the currently used transformation
+        // files?
+        $path = '.';
+        foreach ( glob( $path . '/*.tr' ) as $file )
+        {
+            $processor->loadRules( $file );
+        }
+
+        return $processor;
+    }
+
+    /**
+     * @return \ezp\Persistence\Content\Search\Handler
+     */
+    public function searchHandler()
+    {
+        if ( !isset( $this->searchHandler ) )
+        {
+
+            $this->searchHandler = new Content\Search\Handler(
+                new Content\Search\Gateway\EzcDatabase(
+                    $this->dbHandler,
+                    new Content\Search\Gateway\CriteriaConverter(
+                        array(
+                            new Content\Search\Gateway\CriterionHandler\ContentId(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\LogicalNot(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\LogicalAnd(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\LogicalOr(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\SubtreeId(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\ContentTypeId(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\ContentTypeGroupId(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\DateMetadata(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\LocationId(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\ParentLocationId(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\RemoteId(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\SectionId(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\Status(
+                                $this->dbHandler
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\FullText(
+                                $this->dbHandler,
+                                $this->getTransformationProcessor()
+                            ),
+                            new Content\Search\Gateway\CriterionHandler\Field(
+                                $this->dbHandler,
+                                $this->getFieldValueConverterRegistry()
+                            ),
+                        )
+                    ),
+                    new Content\Gateway\EzcDatabase\QueryBuilder( $this->dbHandler )
+                ),
+                new Content\Mapper(
+                    new Content\Location\Mapper(),
+                    $this->getFieldValueConverterRegistry()
+                )
+            );
+        }
+        return $this->searchHandler;
+    }
+
+    /**
      * @return \ezp\Persistence\Content\Type\Handler
      */
     public function contentTypeHandler()
@@ -154,11 +331,54 @@ class RepositoryHandler implements HandlerInterface
         if ( !isset( $this->contentTypeHandler ) )
         {
             $this->contentTypeHandler = new Type\Handler(
-                new Type\Gateway\EzcDatabase( $this->dbHandler ),
-                new Type\Mapper()
+                $gateway = ( new Type\Gateway\EzcDatabase(
+                    $this->dbHandler,
+                    $this->getLanguageMaskGenerator()
+                ) ),
+                new Type\Mapper( $this->getFieldValueConverterRegistry() ),
+                new Type\Update\Handler\EzcDatabase(
+                    $gateway,
+                    new Type\ContentUpdater(
+                        $this->searchHandler(),
+                        $this->getContentGateway(),
+                        $this->getFieldValueConverterRegistry()
+                    )
+                )
             );
         }
         return $this->contentTypeHandler;
+    }
+
+    /**
+     * @return \ezp\Persistence\Content\Language\Handler
+     */
+    public function contentLanguageHandler()
+    {
+        if ( !isset( $this->languageHandler ) )
+        {
+            $this->languageHandler = new Content\Language\CachingHandler(
+                new Content\Language\Handler(
+                    new Content\Language\Gateway\EzcDatabase( $this->dbHandler ),
+                    new Content\Language\Mapper()
+                ),
+                $this->getLanguageCache()
+            );
+        }
+        return $this->languageHandler;
+    }
+
+    /**
+     * Returns a Language cache
+     *
+     * @return \ezp\Persistence\Storage\Legacy\Content\Language\Cache
+     */
+    protected function getLanguageCache()
+    {
+        if ( !isset( $this->languageCache ) )
+        {
+            $this->languageCache = new Content\Language\Cache();
+        }
+        return $this->languageCache;
     }
 
     /**
@@ -169,10 +389,25 @@ class RepositoryHandler implements HandlerInterface
         if ( !isset( $this->locationHandler ) )
         {
             $this->locationHandler = new LocationHandler(
-                new Content\Location\Gateway\EzcDatabase( $this->dbHandler )
+                new Content\Location\Gateway\EzcDatabase( $this->dbHandler ),
+                $this->getLocationMapper()
             );
         }
         return $this->locationHandler;
+    }
+
+    /**
+     * Returns a location mapper
+     *
+     * @return \ezp\Persistence\Storage\Legacy\Content\Location\Mapper
+     */
+    protected function getLocationMapper()
+    {
+        if ( !isset( $this->locationMapper ) )
+        {
+            $this->locationMapper = new Content\Location\Mapper();
+        }
+        return $this->locationMapper;
     }
 
     /**
@@ -195,7 +430,21 @@ class RepositoryHandler implements HandlerInterface
      */
     public function sectionHandler()
     {
-        throw new RuntimeException( 'Not implemented, yet.' );
+        if ( !isset( $this->sectionHandler ) )
+        {
+            $this->sectionHandler = new Content\Section\Handler(
+                new Content\Section\Gateway\EzcDatabase( $this->dbHandler )
+            );
+        }
+        return $this->sectionHandler;
+    }
+
+    /**
+     * @return \ezp\Persistence\Content\Location\Trash\Handler
+     */
+    public function trashHandler()
+    {
+        throw new \RuntimeException( 'Not implemented yet' );
     }
 
     /**

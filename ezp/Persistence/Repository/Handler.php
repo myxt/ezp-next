@@ -21,14 +21,29 @@ interface Handler
     public function contentHandler();
 
     /**
+     * @return \ezp\Persistence\Content\Search\Handler
+     */
+    public function searchHandler();
+
+    /**
      * @return \ezp\Persistence\Content\Type\Handler
      */
     public function contentTypeHandler();
 
     /**
+     * @return \ezp\Persistence\Content\Language\Handler
+     */
+    public function contentLanguageHandler();
+
+    /**
      * @return \ezp\Persistence\Content\Location\Handler
      */
     public function locationHandler();
+
+    /**
+     * @return \ezp\Persistence\Content\Location\Trash\Handler
+     */
+    public function trashHandler();
 
     /**
      * @return \ezp\Persistence\User\Handler

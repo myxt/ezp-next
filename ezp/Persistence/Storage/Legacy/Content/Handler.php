@@ -10,17 +10,16 @@
 
 namespace ezp\Persistence\Storage\Legacy\Content;
 use ezp\Persistence\Storage\Legacy\Content\Gateway,
-    ezp\Persistence\Storage\Legacy\Content\Mapper;
-
-use ezp\Persistence\Content\Handler as BaseContentHandler,
+    ezp\Persistence\Storage\Legacy\Content\Mapper,
+    ezp\Persistence\Content\Handler as BaseContentHandler,
     ezp\Persistence\Content\CreateStruct,
     ezp\Persistence\Content\UpdateStruct,
-    ezp\Persistence\Content\Criterion;
+    ezp\Persistence\Content\Criterion,
+    ezp\Persistence\Content\RestrictedVersion,
+    ezp\Persistence\Content\Relation\CreateStruct as RelationCreateStruct;
 
 /**
  * The Content Handler stores Content and ContentType objects.
- *
- * @version //autogentag//
  */
 class Handler implements BaseContentHandler
 {
@@ -64,9 +63,9 @@ class Handler implements BaseContentHandler
         StorageRegistry $storageRegistry
     )
     {
-        $this->contentGateway  = $contentGateway;
+        $this->contentGateway = $contentGateway;
         $this->locationHandler = $locationHandler;
-        $this->mapper          = $mapper;
+        $this->mapper = $mapper;
         $this->storageRegistry = $storageRegistry;
     }
 
@@ -91,7 +90,7 @@ class Handler implements BaseContentHandler
         $version = $this->mapper->createVersionForContent( $content, 1 );
 
         $version->id = $this->contentGateway->insertVersion(
-            $version
+            $version, $content->alwaysAvailable
         );
 
         foreach ( $struct->fields as $field )
@@ -111,8 +110,8 @@ class Handler implements BaseContentHandler
 
         foreach ( $struct->parentLocations as $location )
         {
-            $this->locationHandler->createLocation(
-                $this->mapper->createLocationCreateStruct( $content, $struct ),
+            $this->locationHandler->create(
+                $this->mapper->createLocationCreateStruct( $content ),
                 $location
             );
         }
@@ -145,7 +144,7 @@ class Handler implements BaseContentHandler
         );
 
         $version->id = $this->contentGateway->insertVersion(
-            $version
+            $version, $content->alwaysAvailable
         );
 
         foreach ( $content->version->fields as $field )
@@ -164,7 +163,6 @@ class Handler implements BaseContentHandler
         $content->version = $version;
         return $content;
     }
-
 
     /**
      * Returns the raw data of a content object identified by $id, in a struct.
@@ -201,17 +199,18 @@ class Handler implements BaseContentHandler
     /**
      * Sets the state of object identified by $contentId and $version to $state.
      *
-     * The $state can be one of STATUS_DRAFT, STATUS_PUBLISHED, STATUS_ARCHIVED.
+     * The $status can be one of STATUS_DRAFT, STATUS_PUBLISHED, STATUS_ARCHIVED
+     * @todo Is this supposed to be constants from Content or Version? They differ..
      *
      * @param int $contentId
-     * @param int $state
+     * @param int $status
      * @param int $version
      * @see ezp\Content
      * @return boolean
      */
-    public function setState( $contentId, $state, $version )
+    public function setStatus( $contentId, $status, $version )
     {
-        throw new Exception( "Not implemented yet." );
+        throw new \Exception( "@TODO: Not implemented yet." );
     }
 
     /**
@@ -227,7 +226,7 @@ class Handler implements BaseContentHandler
      */
     public function setObjectState( $contentId, $stateGroup, $state )
     {
-        throw new Exception( "Not implemented yet." );
+        throw new \Exception( "@TODO: Not implemented yet." );
     }
 
     /**
@@ -242,7 +241,7 @@ class Handler implements BaseContentHandler
      */
     public function getObjectState( $contentId, $stateGroup )
     {
-        throw new Exception( "Not implemented yet." );
+        throw new \Exception( "@TODO: Not implemented yet." );
     }
 
     /**
@@ -254,7 +253,7 @@ class Handler implements BaseContentHandler
     public function update( UpdateStruct $content )
     {
         $this->contentGateway->updateVersion(
-            $content->id, $content->versionNo, $content->userId
+            $content->id, $content->versionNo
         );
 
         foreach ( $content->fields as $field )
@@ -281,18 +280,118 @@ class Handler implements BaseContentHandler
      */
     public function delete( $contentId )
     {
-        throw new Exception( "Not implemented yet." );
+        $locationIds = $this->contentGateway->getAllLocationIds( $contentId );
+        foreach ( $locationIds as $locationId )
+        {
+            $this->locationHandler->removeSubtree( $locationId );
+        }
+
+        $fieldIds = $this->contentGateway->getFieldIdsByType( $contentId );
+        foreach ( $fieldIds as $fieldType => $ids )
+        {
+            $this->storageRegistry->getStorage( $fieldType )
+                ->deleteFieldData( $ids );
+        }
+
+        $this->contentGateway->deleteRelations( $contentId );
+        $this->contentGateway->deleteFields( $contentId );
+        $this->contentGateway->deleteVersions( $contentId );
+        $this->contentGateway->deleteNames( $contentId );
+        $this->contentGateway->deleteContent( $contentId );
     }
 
     /**
      * Return the versions for $contentId
      *
      * @param int $contentId
-     * @return array(Version)
+     * @return ezp\Persistence\Content\RestrictedVersion[]
      */
     public function listVersions( $contentId )
     {
-        throw new Exception( "Not implemented yet." );
+        $rows = $this->contentGateway->listVersions( $contentId );
+        return $this->mapper->extractVersionListFromRows( $rows );
+    }
+
+    /**
+     * Copy Content with Fields and Versions from $contentId in $version.
+     *
+     * Copies all fields from $contentId in $version (or all versions if false)
+     * to a new object which is returned. Version numbers are maintained.
+     *
+     * @param int $contentId
+     * @param int|false $version Copy all versions if left false
+     * @return \ezp\Persistence\Content
+     * @throws \ezp\Base\Exception\NotFound If content or version is not found
+     */
+    public function copy( $contentId, $version )
+    {
+        throw new \Exception( "@TODO: Not implemented yet." );
+    }
+
+    /**
+     * Returns fields for $contentId in $version (version number)
+     *
+     * @param int $contentId
+     * @param int $version Version number
+     * @return \ezp\Persistence\Content\Field[]
+     * @throws \ezp\Base\Exception\NotFound If content or version is not found
+     */
+    public function loadFields( $contentId, $version )
+    {
+        throw new \Exception( "@TODO: Not implemented yet." );
+    }
+
+    /**
+     * Creates a relation between $sourceContentId in $sourceContentVersion
+     * and $destinationContentId with a specific $type.
+     *
+     * @todo Should the existence verifications happen here or is this supposed to be handled at a higher level?
+     *
+     * @param  \ezp\Persistence\Content\Relation\CreateStruct $relation
+     * @return \ezp\Persistence\Content\Relation
+     */
+    public function addRelation( RelationCreateStruct $relation )
+    {
+        throw new \Exception( "@TODO: Not implemented yet." );
+    }
+
+    /**
+     * Removes a relation by relation Id.
+     *
+     * @todo Should the existence verifications happen here or is this supposed to be handled at a higher level?
+     *
+     * @param mixed $relationId
+     */
+    public function removeRelation( $relationId )
+    {
+        throw new \Exception( "@TODO: Not implemented yet." );
+    }
+
+    /**
+     * Loads relations from $sourceContentId. Optionally, loads only those with $type and $sourceContentVersion.
+     *
+     * @param mixed $sourceContentId Source Content ID
+     * @param mixed|null $sourceContentVersion Source Content Version, null if not specified
+     * @param int|null $type {@see \ezp\Content\Relation::COMMON, \ezp\Content\Relation::EMBED, \ezp\Content\Relation::LINK, \ezp\Content\Relation::ATTRIBUTE}
+     * @return \ezp\Persistence\Content\Relation[]
+     */
+    public function loadRelations( $sourceContentId, $sourceContentVersion = null, $type = null )
+    {
+        throw new \Exception( "@TODO: Not implemented yet." );
+    }
+
+    /**
+     * Loads relations from $contentId. Optionally, loads only those with $type.
+     *
+     * Only loads relations against published versions.
+     *
+     * @param mixed $destinationContentId Destination Content ID
+     * @param int|null $type {@see \ezp\Content\Relation::COMMON, \ezp\Content\Relation::EMBED, \ezp\Content\Relation::LINK, \ezp\Content\Relation::ATTRIBUTE}
+     * @return \ezp\Persistence\Content\Relation[]
+     */
+    public function loadReverseRelations( $destinationContentId, $type = null )
+    {
+        throw new \Exception( "@TODO: Not implemented yet." );
     }
 }
 ?>

@@ -44,6 +44,40 @@ class Type extends ArrayObject implements Collection
     }
 
     /**
+     * Returns the first index at which a given element can be found in the array, or false if it is not present.
+     *
+     * Uses strict comparison.
+     *
+     * @param mixed $item
+     * @return int|string|false False if nothing was found
+     */
+    public function indexOf( $item )
+    {
+        foreach ( $this as $key => $value )
+            if ( $value === $item )
+                return $key;
+        return false;
+    }
+
+    /**
+     * Removes the first index at which a given element can be found in the array, or false if it is not present.
+     *
+     * Uses strict comparison.
+     *
+     * @param mixed $item
+     * @return int|string|false False if nothing was found, else key of found item
+     */
+    public function remove( $item )
+    {
+        $index = $this->indexOf( $item );
+        if ( $index === false )
+            return false;
+        $this->offsetUnset( $index );
+        $this->exchangeArray( array_values( $this->getArrayCopy() ) );
+        return $index;
+    }
+
+    /**
      * Overrides offsetSet to check type and allow if correct
      *
      * @internal

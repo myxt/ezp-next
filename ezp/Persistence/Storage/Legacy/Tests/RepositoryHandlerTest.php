@@ -108,6 +108,39 @@ class RepositoryHandlerTest extends TestCase
     }
 
     /**
+     * @covers ezp\Persistence\Storage\Legacy\RepositoryHandler::searchHandler
+     * @return void
+     */
+    public function testSearchHandler()
+    {
+        $handler = $this->getRepositoryHandlerFixture();
+        $searchHandler = $handler->searchHandler();
+
+        $this->assertInstanceOf(
+            'ezp\\Persistence\\Content\\Search\\Handler',
+            $searchHandler
+        );
+        $this->assertInstanceOf(
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\Search\\Handler',
+            $searchHandler
+        );
+    }
+
+    /**
+     * @covers ezp\Persistence\Storage\Legacy\RepositoryHandler::searchHandler
+     * @return void
+     */
+    public function testSearchHandlerTwice()
+    {
+        $handler = $this->getRepositoryHandlerFixture();
+
+        $this->assertSame(
+            $handler->searchHandler(),
+            $handler->searchHandler()
+        );
+    }
+
+    /**
      * @covers ezp\Persistence\Storage\Legacy\RepositoryHandler::contentTypeHandler
      * @return void
      */
@@ -123,6 +156,26 @@ class RepositoryHandlerTest extends TestCase
         $this->assertInstanceOf(
             'ezp\\Persistence\\Storage\\Legacy\\Content\\Type\\Handler',
             $contentTypeHandler
+        );
+    }
+
+    /**
+     * @covers ezp\Persistence\Storage\Legacy\RepositoryHandler::contentLanguageHandler
+     * @return void
+     */
+    public function testContentLanguageHandler()
+    {
+        $this->markTestSkipped( 'Not testable due to broken DI.' );
+        $handler = $this->getRepositoryHandlerFixture();
+        $contentLanguageHandler = $handler->contentLanguageHandler();
+
+        $this->assertInstanceOf(
+            'ezp\\Persistence\\Content\\Language\\Handler',
+            $contentLanguageHandler
+        );
+        $this->assertInstanceOf(
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\Language\\CachingHandler',
+            $contentLanguageHandler
         );
     }
 
@@ -203,6 +256,39 @@ class RepositoryHandlerTest extends TestCase
         $this->assertSame(
             $handler->userHandler(),
             $handler->userHandler()
+        );
+    }
+
+    /**
+     * @covers ezp\Persistence\Storage\Legacy\RepositoryHandler::sectionHandler
+     * @return void
+     */
+    public function testSectionHandler()
+    {
+        $handler = $this->getRepositoryHandlerFixture();
+        $sectionHandler = $handler->sectionHandler();
+
+        $this->assertInstanceOf(
+            'ezp\\Persistence\\Content\\Section\\Handler',
+            $sectionHandler
+        );
+        $this->assertInstanceOf(
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\Section\\Handler',
+            $sectionHandler
+        );
+    }
+
+    /**
+     * @covers ezp\Persistence\Storage\Legacy\RepositoryHandler::sectionHandler
+     * @return void
+     */
+    public function testSectionHandlerTwice()
+    {
+        $handler = $this->getRepositoryHandlerFixture();
+
+        $this->assertSame(
+            $handler->sectionHandler(),
+            $handler->sectionHandler()
         );
     }
 

@@ -13,18 +13,31 @@ class Query
 {
     /**
      * The Query criterion
-     * @var Criterion
+     * Can contain multiple criterion, as items of a logical one (by default AND)
+     * @var \ezp\Persistence\Content\Criterion
      */
     public $criterion;
 
     /**
-     * Not implemented yet
+     * Query sorting clauses
+     * @var \ezp\Persistence\Content\Query\SortClause[]
      */
-    public $sortBy;
+    public $sortClauses;
 
     /**
-     * Not implemented yet
+     * Query offset
+     * @var integer
      */
     public $offset;
+
+    /**
+     * Query limit
+     * @var integer
+     */
+    public $limit;
+
+    const SORT_ASC = 'ascending';
+
+    const SORT_DESC = 'descending';
 }
 ?>

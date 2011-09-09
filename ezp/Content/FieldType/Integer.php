@@ -12,19 +12,18 @@ use ezp\Content\FieldType,
     ezp\Base\Exception\BadFieldTypeInput,
     ezp\Persistence\Content\FieldValue;
 
+/**
+ * Integer field types
+ *
+ * Represents integers.
+ */
 class Integer extends FieldType
 {
     protected $fieldTypeString = 'ezinteger';
     protected $defaultValue = 0;
-    protected $isTranslateable = false;
     protected $isSearchable = true;
 
-    protected $allowedValidators = array(
-        "IntegerValidator" => array(
-            "minValue" => null,
-            "maxValue" => null
-        )
-    );
+    protected $allowedValidators = array( "IntegerValidator" );
 
     /**
      * Checks if value can be parsed.
@@ -102,15 +101,4 @@ class Integer extends FieldType
     {
         return array( 'value' => $this->value );
     }
-
-    /**
-     * Returns stored validation data in format suitable for packing it in a
-     * FieldValue
-     *
-     * @return array
-     */
-    protected function getValidationData()
-    {
-    }
-
 }

@@ -16,6 +16,7 @@ use ezp\Persistence\Storage\Legacy\Tests\TestCase,
     ezp\Persistence\Content,
     ezp\Persistence\Content\Field,
     ezp\Persistence\Content\FieldValue,
+    ezp\Persistence\Content\RestrictedVersion,
     ezp\Persistence\Content\CreateStruct;
 
 /**
@@ -24,6 +25,20 @@ use ezp\Persistence\Storage\Legacy\Tests\TestCase,
 class MapperTest extends TestCase
 {
     /**
+     * Location mapper mock
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Location\Mapper
+     */
+    protected $locationMapperMock;
+
+    /**
+     * Value converter registry mock
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\FieldValue\Converter\Registry
+     */
+    protected $valueConverterRegistryMock;
+
+    /**
      * @return void
      * @covers ezp\Persistence\Storage\Legacy\Content\Mapper::__construct
      */
@@ -31,7 +46,7 @@ class MapperTest extends TestCase
     {
         $regMock = $this->getValueConverterRegistryMock();
 
-        $mapper = new Mapper( $regMock );
+        $mapper = $this->getMapper();
 
         $this->assertAttributeSame(
             $regMock,
@@ -48,7 +63,7 @@ class MapperTest extends TestCase
     {
         $struct = $this->getCreateStructFixture();
 
-        $mapper = new Mapper( $this->getValueConverterRegistryMock() );
+        $mapper = $this->getMapper();
         $content = $mapper->createContentFromCreateStruct( $struct );
 
         $this->assertStructsEqual(
@@ -67,12 +82,12 @@ class MapperTest extends TestCase
     {
         $struct = new CreateStruct();
 
-        $struct->name            = 'Content name';
-        $struct->typeId          = 23;
-        $struct->sectionId       = 42;
-        $struct->ownerId         = 13;
+        $struct->name = 'Content name';
+        $struct->typeId = 23;
+        $struct->sectionId = 42;
+        $struct->ownerId = 13;
         $struct->parentLocations = array( 2, 3, 4, );
-        $struct->fields          = array( new Field(), );
+        $struct->fields = array( new Field(), );
 
         return $struct;
     }
@@ -85,17 +100,17 @@ class MapperTest extends TestCase
     {
         $content = $this->getContentFixture();
 
-        $mapper = new Mapper( $this->getValueConverterRegistryMock() );
+        $mapper = $this->getMapper();
         $version = $mapper->createVersionForContent( $content, 1 );
 
         $this->assertPropertiesCorrect(
             array(
-                'id'        => null,
+                'id' => null,
                 'versionNo' => 1,
                 'creatorId' => 13,
-                'state'     => 0,
+                'status' => 0,
                 'contentId' => 2342,
-                'fields'    => array(),
+                'fields' => array(),
             ),
             $version
         );
@@ -114,7 +129,7 @@ class MapperTest extends TestCase
 
     public function testCreateLocationFromContent()
     {
-        $mapper = new Mapper( $this->getValueConverterRegistryMock() );
+        $mapper = $this->getMapper();
         $location = $mapper->createLocationCreateStruct(
             $content = $this->getFullContentFixture(),
             $struct = $this->getCreateStructFixture()
@@ -122,7 +137,7 @@ class MapperTest extends TestCase
 
         $this->assertPropertiesCorrect(
             array(
-                'contentId'      => $content->id,
+                'contentId' => $content->id,
                 'contentVersion' => 1,
             ),
             $location
@@ -138,12 +153,12 @@ class MapperTest extends TestCase
     {
         $struct = new Content();
 
-        $struct->id              = 2342;
-        $struct->name            = 'Content name';
-        $struct->typeId          = 23;
-        $struct->sectionId       = 42;
-        $struct->ownerId         = 13;
-        $struct->locations       = array();
+        $struct->id = 2342;
+        $struct->name = 'Content name';
+        $struct->typeId = 23;
+        $struct->sectionId = 42;
+        $struct->ownerId = 13;
+        $struct->locations = array();
 
         return $struct;
     }
@@ -152,9 +167,11 @@ class MapperTest extends TestCase
     {
         $struct = $this->getContentFixture();
 
-        $struct->version = new Content\Version( array(
-            'id' => 1,
-        ) );
+        $struct->version = new Content\Version(
+            array(
+                'id' => 1,
+            )
+        );
 
         return $struct;
     }
@@ -170,10 +187,13 @@ class MapperTest extends TestCase
             'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter'
         );
         $convMock->expects( $this->once() )
-            ->method( 'toStorage' )
+            ->method( 'toStorageValue' )
             ->with(
                 $this->isInstanceOf(
                     'ezp\\Persistence\\Content\\FieldValue'
+                ),
+                $this->isInstanceOf(
+                    'ezp\\Persistence\\Storage\\Legacy\\Content\\StorageFieldValue'
                 )
             )->will( $this->returnValue( new StorageFieldValue() ) );
 
@@ -184,7 +204,7 @@ class MapperTest extends TestCase
         $field->type = 'some-type';
         $field->value = new FieldValue();
 
-        $mapper = new Mapper( $reg );
+        $mapper = new Mapper( $this->getLocationMapperMock(), $reg );
         $res = $mapper->convertToStorageValue( $field );
 
         $this->assertInstanceOf(
@@ -199,6 +219,12 @@ class MapperTest extends TestCase
      */
     public function testExtractContentFromRows()
     {
+        $locationMapperMock = $this->getLocationMapperMock();
+        $locationMapperMock->expects( $this->once() )
+            ->method( 'createLocationFromRow' )
+            ->with( $this->isType( 'array' ) )
+            ->will( $this->returnValue( new Content\Location() ) );
+
         $convMock = $this->getMock(
             'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter'
         );
@@ -217,7 +243,7 @@ class MapperTest extends TestCase
 
         $rowsFixture = $this->getContentExtractFixture();
 
-        $mapper = new Mapper( $reg );
+        $mapper = new Mapper( $locationMapperMock, $reg );
         $result = $mapper->extractContentFromRows( $rowsFixture );
 
         $this->assertEquals(
@@ -225,6 +251,76 @@ class MapperTest extends TestCase
                 $this->getContentExtractReference(),
             ),
             $result
+        );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Mapper::extractContentFromRows
+     */
+    public function testExtractContentFromRowsMultipleVersions()
+    {
+        $locationMapperMock = $this->getLocationMapperMock();
+        $locationMapperMock->expects( $this->any() )
+            ->method( 'createLocationFromRow' )
+            ->will( $this->returnValue( new Content\Location() ) );
+
+        $convMock = $this->getMock(
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter'
+        );
+        $convMock->expects( $this->any() )
+            ->method( 'toFieldValue' )
+            ->will( $this->returnValue( new FieldValue() ) );
+
+        $reg = new Registry();
+        $reg->register( 'ezstring', $convMock );
+        $reg->register( 'ezxmltext', $convMock );
+        $reg->register( 'ezdatetime', $convMock );
+
+        $rowsFixture = $this->getMultipleVersionsExtractFixture();
+
+        $mapper = new Mapper( $locationMapperMock, $reg );
+        $result = $mapper->extractContentFromRows( $rowsFixture );
+
+        $this->assertEquals(
+            2,
+            count( $result )
+        );
+
+        $this->assertEquals(
+            11,
+            $result[0]->id
+        );
+        $this->assertEquals(
+            11,
+            $result[1]->id
+        );
+
+        $this->assertEquals(
+            1,
+            $result[0]->version->versionNo
+        );
+        $this->assertEquals(
+            2,
+            $result[1]->version->versionNo
+        );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Mapper::extractVersionListFromRows
+     */
+    public function testExtractVersionListFromRows()
+    {
+        $mapper = $this->getMapper();
+
+        $rows = $this->getRestrictedVersionExtractFixture();
+
+        $res = $mapper->extractVersionListFromRows( $rows );
+
+        $this->assertEquals(
+            $this->getRestrictedVersionExtractReference(),
+            $res
         );
     }
 
@@ -253,15 +349,108 @@ class MapperTest extends TestCase
     }
 
     /**
+     * Returns a fixture for mapping RestrictedVersion objects
+     *
+     * @return string[][]
+     */
+    protected function getRestrictedVersionExtractFixture()
+    {
+        return require __DIR__ . '/_fixtures/restricted_version_rows.php';
+    }
+
+    /**
+     * Returns a fixture for mapping multiple versions of a content object
+     *
+     * @return string[][]
+     */
+    protected function getMultipleVersionsExtractFixture()
+    {
+        return require __DIR__ . '/_fixtures/extract_content_from_rows_multiple_versions.php';
+    }
+
+    /**
+     * Returns a reference result for mapping RestrictedVersion objects
+     *
+     * @return RestrictedVersion[]
+     */
+    protected function getRestrictedVersionExtractReference()
+    {
+        $versions = array();
+
+        $version = new RestrictedVersion();
+        $version->id = 675;
+        $version->versionNo = 1;
+        $version->modified = 1313047907;
+        $version->creatorId = 14;
+        $version->created = 1313047865;
+        $version->status = 3;
+        $version->contentId = 226;
+        $version->languageIds = array( 'eng-US' );
+
+        $versions[] = $version;
+
+        $version = new RestrictedVersion();
+        $version->id = 676;
+        $version->versionNo = 2;
+        $version->modified = 1313061404;
+        $version->creatorId = 14;
+        $version->created = 1313061317;
+        $version->status = 1;
+        $version->contentId = 226;
+        $version->languageIds = array( 'eng-US' );
+
+        $versions[] = $version;
+
+        return $versions;
+    }
+
+    /**
+     * Returns a Mapper
+     *
+     * @return \ezp\Persistence\Storage\Legacy\Content\Mapper
+     */
+    protected function getMapper( $locationMapper = null, $valueConverter = null )
+    {
+        return new Mapper(
+            $this->getLocationMapperMock(),
+            $this->getValueConverterRegistryMock()
+        );
+    }
+
+    /**
+     * Returns a location mapper mock
+     *
+     * @return \ezp\Persistence\Storage\Legacy\Content\Location\Mapper
+     */
+    protected function getLocationMapperMock()
+    {
+        if ( !isset( $this->locationMapperMock ) )
+        {
+            $this->locationMapperMock = $this->getMock(
+                'ezp\\Persistence\\Storage\\Legacy\\Content\\Location\\Mapper',
+                array(),
+                array(),
+                '',
+                false
+            );
+        }
+        return $this->locationMapperMock;
+    }
+
+    /**
      * Returns a FieldValue converter registry mock
      *
      * @return \ezp\Persistence\Storage\Legacy\Content\FieldValue\Converter\Registry
      */
     protected function getValueConverterRegistryMock()
     {
-        return $this->getMock(
-            'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter\\Registry'
-        );
+        if ( !isset( $this->valueConverterRegistryMock ) )
+        {
+            $this->valueConverterRegistryMock = $this->getMock(
+                'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter\\Registry'
+            );
+        }
+        return $this->valueConverterRegistryMock;
     }
 
     /**

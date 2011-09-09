@@ -52,7 +52,7 @@ class UserHandlerTest extends TestCase
     {
         $handler = $this->getUserHandler();
 
-        $handler->createUser( $this->getValidUser() );
+        $handler->create( $this->getValidUser() );
         $this->assertQueryResult(
             array( array( 1 ) ),
             $this->handler->createSelectQuery()->select( 'COUNT( * )' )->from( 'ezuser' ),
@@ -67,8 +67,8 @@ class UserHandlerTest extends TestCase
     {
         $handler = $this->getUserHandler();
 
-        $handler->createUser( $user = $this->getValidUser() );
-        $handler->createUser( $user );
+        $handler->create( $user = $this->getValidUser() );
+        $handler->create( $user );
     }
 
     /**
@@ -81,21 +81,21 @@ class UserHandlerTest extends TestCase
         $user = new Persistence\User();
         $user->id = 42;
 
-        $handler->createUser( $user );
+        $handler->create( $user );
     }
 
     public function testCreateAndDeleteUser()
     {
         $handler = $this->getUserHandler();
 
-        $handler->createUser( $user = $this->getValidUser() );
+        $handler->create( $user = $this->getValidUser() );
         $this->assertQueryResult(
             array( array( 1 ) ),
             $this->handler->createSelectQuery()->select( 'COUNT( * )' )->from( 'ezuser' ),
             'Expected one user to be created.'
         );
 
-        $handler->deleteUser( $user->id );
+        $handler->delete( $user->id );
         $this->assertQueryResult(
             array( array( 0 ) ),
             $this->handler->createSelectQuery()->select( 'COUNT( * )' )->from( 'ezuser' ),
@@ -107,7 +107,7 @@ class UserHandlerTest extends TestCase
     {
         $handler = $this->getUserHandler();
 
-        $handler->deleteUser( 'not_existing' );
+        $handler->delete( 'not_existing' );
         $this->assertQueryResult(
             array( array( 0 ) ),
             $this->handler->createSelectQuery()->select( 'COUNT( * )' )->from( 'ezuser' ),
@@ -119,10 +119,10 @@ class UserHandlerTest extends TestCase
     {
         $handler = $this->getUserHandler();
 
-        $handler->createUser( $user = $this->getValidUser() );
+        $handler->create( $user = $this->getValidUser() );
 
         $user->login = 'new_login';
-        $handler->updateUser( $user );
+        $handler->update( $user );
 
         $this->assertQueryResult(
             array( array( 42, 'kore@example.org', 'new_login', 1234567890, 'md5' ) ),
@@ -134,7 +134,7 @@ class UserHandlerTest extends TestCase
     public function testSilentlyUpdateNotExistingUser()
     {
         $handler = $this->getUserHandler();
-        $handler->updateUser( $this->getValidUser() );
+        $handler->update( $this->getValidUser() );
         $this->assertQueryResult(
             array( array( 0 ) ),
             $this->handler->createSelectQuery()->select( 'COUNT( * )' )->from( 'ezuser' ),
@@ -220,7 +220,7 @@ class UserHandlerTest extends TestCase
 
         $policy = new Persistence\User\Policy();
         $policy->module = 'foo';
-        $policy->moduleFunction = 'bar';
+        $policy->function = 'bar';
 
         $handler->addPolicy( $role->id, $policy );
 
@@ -241,7 +241,7 @@ class UserHandlerTest extends TestCase
 
         $policy = new Persistence\User\Policy();
         $policy->module = 'foo';
-        $policy->moduleFunction = 'bar';
+        $policy->function = 'bar';
 
         $policy = $handler->addPolicy( $role->id, $policy );
 
@@ -254,11 +254,11 @@ class UserHandlerTest extends TestCase
 
         $policy1 = new Persistence\User\Policy();
         $policy1->module = 'foo';
-        $policy1->moduleFunction = 'bar';
+        $policy1->function = 'bar';
 
         $policy2 = new Persistence\User\Policy();
         $policy2->module = 'foo';
-        $policy2->moduleFunction = 'blubb';
+        $policy2->function = 'blubb';
 
         $role = new Persistence\User\Role();
         $role->name = 'Test';
@@ -301,7 +301,7 @@ class UserHandlerTest extends TestCase
         $handler = $this->getUserHandler();
 
         $role = $this->createRole();
-        $handler->createUser( $user = $this->getValidUser() );
+        $handler->create( $user = $this->getValidUser() );
 
         $handler->assignRole( $user->id, $role->id, array() );
 
@@ -319,11 +319,15 @@ class UserHandlerTest extends TestCase
         $handler = $this->getUserHandler();
 
         $role = $this->createRole();
-        $handler->createUser( $user = $this->getValidUser() );
+        $handler->create( $user = $this->getValidUser() );
 
-        $handler->assignRole( $user->id, $role->id, array(
-            'Subtree' => array( '/1' ),
-        ) );
+        $handler->assignRole(
+            $user->id,
+            $role->id,
+            array(
+                'Subtree' => array( '/1' ),
+            )
+        );
 
         $this->assertQueryResult(
             array(
@@ -339,12 +343,16 @@ class UserHandlerTest extends TestCase
         $handler = $this->getUserHandler();
 
         $role = $this->createRole();
-        $handler->createUser( $user = $this->getValidUser() );
+        $handler->create( $user = $this->getValidUser() );
 
-        $handler->assignRole( $user->id, $role->id, array(
-            'Subtree' => array( '/1', '/1/2' ),
-            'Foo' => array( 'Bar' ),
-        ) );
+        $handler->assignRole(
+            $user->id,
+            $role->id,
+            array(
+                'Subtree' => array( '/1', '/1/2' ),
+                'Foo' => array( 'Bar' ),
+            )
+        );
 
         $this->assertQueryResult(
             array(
@@ -362,14 +370,18 @@ class UserHandlerTest extends TestCase
         $handler = $this->getUserHandler();
 
         $role = $this->createRole();
-        $handler->createUser( $user = $this->getValidUser() );
+        $handler->create( $user = $this->getValidUser() );
 
-        $handler->assignRole( $user->id, $role->id, array(
-            'Subtree' => array( '/1', '/1/2' ),
-            'Foo' => array( 'Bar' ),
-        ) );
+        $handler->assignRole(
+            $user->id,
+            $role->id,
+            array(
+                'Subtree' => array( '/1', '/1/2' ),
+                'Foo' => array( 'Bar' ),
+            )
+        );
 
-        $handler->removeRole( $user->id, $role->id );
+        $handler->unAssignRole( $user->id, $role->id );
 
         $this->assertQueryResult(
             array(),

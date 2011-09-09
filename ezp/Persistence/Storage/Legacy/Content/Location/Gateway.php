@@ -9,6 +9,7 @@
 
 namespace ezp\Persistence\Storage\Legacy\Content\Location;
 use ezp\Persistence\Content,
+    ezp\Persistence\Content\Location\UpdateStruct,
     ezp\Persistence\Content\Location\CreateStruct;
 
 /**
@@ -113,22 +114,22 @@ abstract class Gateway
     abstract public function swap( $locationId1, $locationId2 );
 
     /**
-     * Updates an existing location priority.
-     *
-     * @param int $locationId
-     * @param int $priority
-     * @return boolean
-     */
-    abstract public function updatePriority( $locationId, $priority );
-
-    /**
      * Creates a new location in given $parentNode
      *
      * @param \ezp\Persistence\Content\Location\CreateStruct $createStruct
      * @param array $parentNode
      * @return \ezp\Persistence\Content\Location
      */
-    abstract public function createLocation( CreateStruct $createStruct, array $parentNode );
+    abstract public function create( CreateStruct $createStruct, array $parentNode );
+
+    /**
+     * Updates an existing location.
+     *
+     * @param \ezp\Persistence\Content\Location\UpdateStruct $location
+     * @param int $locationId
+     * @return boolean
+     */
+    abstract public function update( UpdateStruct $location, $locationId );
 
     /**
      * Removes all Locations under and includin $locationId.
@@ -156,21 +157,25 @@ abstract class Gateway
     abstract public function trashSubtree( $locationId );
 
     /**
-     * Returns a trashed subtree to normal state.
+     * Returns a trashed location to normal state.
      *
-     * The affected subtree is now again part of matching content queries.
+     * Recreates the originally trashed location in the new position. If no new
+     * position has been specified, it will be tried to re-create the location
+     * at the old position. If this is not possible ( because the old location
+     * does not exist any more) and exception is thrown.
      *
      * @param mixed $locationId
+     * @param mixed $newParentId
      * @return boolean
      */
-    abstract public function untrashSubtree( $locationId );
+    abstract public function untrashLocation( $locationId, $newParentId = null );
 
     /**
      * Set section on all content objects in the subtree
      *
-     * @param mixed $locationId
+     * @param mixed $pathString
      * @param mixed $sectionId
      * @return boolean
      */
-    abstract public function setSectionForSubtree( $locationId, $sectionId );
+    abstract public function setSectionForSubtree( $pathString, $sectionId );
 }

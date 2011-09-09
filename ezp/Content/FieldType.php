@@ -9,7 +9,10 @@
 
 namespace ezp\Content;
 use ezp\Content\FieldType\FieldSettings,
-    ezp\Persistence\Content\FieldValue;
+    ezp\Persistence\Content\FieldValue,
+    ezp\Content\Type\FieldDefinition,
+    ezp\Base\Configuration,
+    ezp\Base\Exception\MissingClass;
 
 /**
  * Base class for field types, the most basic storage unit of data inside eZ Publish.
@@ -44,39 +47,17 @@ abstract class FieldType
     protected $defaultValue;
 
     /**
-     * @var boolean Flag telling whether or not the data is applicable for translation.
-     */
-    protected $isTranslatable = false;
-
-    /**
      * @var boolean Flag telling whether search index extraction is applicable.
      */
     protected $isSearchable = false;
-
-    /*
-     * This flag is disabled for now. Information collection will probably be
-     * carried with dedicated functionality, which will not require the need
-     * fields to be configured specifically for this purpose.
-     *
-     * @var Flag deciding whether the field type can be used as an information collector.
-     *
-    protected $isInformationCollector;
-    */
 
     /**
      * @var FieldSettings Custom properties which are specific to the field
      *                      type. Typically these properties are used to
      *                      configure behaviour of field types and normally set
-     *                      in the FieldDefiniton on ContentTypes
+     *                      in the FieldDefinition on ContentTypes
      */
     protected $fieldSettings;
-
-    /**
-     * Values for usage in validators.
-     *
-     * @var FieldSettings
-     */
-    protected $validatorData;
 
     /**
      * The setting keys which are available on this field type.
@@ -110,17 +91,6 @@ abstract class FieldType
     public function __construct()
     {
         $this->fieldSettings = new FieldSettings( $this->allowedSettings );
-        $this->validatorData = new FieldSettings( $this->allowedValidators );
-    }
-
-    /**
-     * Does the field type supports translation of its data.
-     *
-     * @return boolean
-     */
-    public function supportsTranslation()
-    {
-        return $this->isTranslatable;
     }
 
     /**
@@ -190,26 +160,13 @@ abstract class FieldType
     }
 
     /**
-     * Sets the constraint, $setting, associated with $validator, to $value.
-     *
-     * @param string $validator
-     * @param string $setting
-     * @param mixed $value
-     * @return void
-     */
-    public function setValidatorSetting( $validator, $setting, $value )
-    {
-        $this->validatorData[$validator][$setting] = $value;
-    }
-
-    /**
      * Return an array of allowed validators to operate on this field type.
      *
      * @return array
      */
     public function allowedValidators()
     {
-        return array_keys( $this->allowedValidators );
+        return $this->allowedValidators;
     }
 
     /**
@@ -290,11 +247,42 @@ abstract class FieldType
     abstract protected function getValueData();
 
     /**
-     * Returns stored validation data in format suitable for packing it in a
-     * FieldValue
+     * Used by the FieldDefinition to populate the fieldConstraints field.
+     *
+     * If validator is not allowed for a given field type, no data from that
+     * validator is populated to $constraints.
+     *
+     * @todo Consider separating out the fieldTypeConstraints into a sepsrate object, so that it could be passed, and not the whole FieldDefinition object.
      *
      * @abstract
-     * @return array
+     * @internal
+     * @param FieldDefinition $fieldDefinition
+     * @param \ezp\Content\FieldType\Validator $validator
+     * @return void
      */
-    abstract protected function getValidationData();
+     public function fillConstraintsFromValidator( FieldDefinition $fieldDefinition, $validator )
+     {
+         if ( in_array( $validator->name(), $this->allowedValidators() ) )
+         {
+             $fieldDefinition->fieldTypeConstraints = array_merge( $fieldDefinition->fieldTypeConstraints, $validator->getValidatorConstraints() );
+         }
+     }
+
+    /**
+     * Factory method for creating field type object based on identifiers.
+     *
+     * @static
+     * @throws \ezp\Base\Exception\MissingClass
+     * @param string $type
+     * @return \ezp\Content\FieldType
+     */
+    public static function create( $type )
+    {
+        $fieldTypeMap = Configuration::getInstance( 'content' )->get( 'fields', 'Type' );
+        if ( !isset( $fieldTypeMap[$type] ) )
+        {
+            throw new MissingClass( $type, 'FieldType' );
+        }
+        return new $fieldTypeMap[$type];
+    }
 }

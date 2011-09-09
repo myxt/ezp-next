@@ -123,5 +123,17 @@ class QueryBuilderTest extends \PHPUnit_Framework_TestCase
             array( 'not', 1, 'ezp\\Persistence\\Content\\Criterion\\LogicalNot', 1 ),
         );
     }
+
+    public function testSorting()
+    {
+        $this->qb->addSortClause( $this->qb->sort->dateModified() );
+
+        $query = $this->qb->getQuery();
+
+        self::assertInstanceOf( 'ezp\\Content\\Query', $query );
+        self::assertEquals( 1, count( $query->sortClauses ) );
+        self::assertInstanceOf( 'ezp\\Persistence\\Content\\Query\\SortClause', $query->sortClauses[0] );
+        self::assertInstanceOf( 'ezp\\Persistence\\Content\\Query\\SortClause\\DateModified', $query->sortClauses[0] );
+    }
 }
 ?>

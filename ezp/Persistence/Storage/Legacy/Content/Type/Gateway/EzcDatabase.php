@@ -10,11 +10,13 @@
 namespace ezp\Persistence\Storage\Legacy\Content\Type\Gateway;
 use ezp\Persistence\Storage\Legacy\Content\Type\Gateway,
     ezp\Persistence\Storage\Legacy\EzcDbHandler,
+    ezp\Persistence\Storage\Legacy\Content\Language,
     ezp\Persistence\Content\Type,
     ezp\Persistence\Content\Type\FieldDefinition,
     ezp\Persistence\Content\Type\UpdateStruct,
     ezp\Persistence\Content\Type\Group,
-    ezp\Persistence\Content\Type\Group\UpdateStruct as GroupUpdateStruct;
+    ezp\Persistence\Content\Type\Group\UpdateStruct as GroupUpdateStruct,
+    ezp\Persistence\Storage\Legacy\Content\StorageFieldDefinition;
 
 /**
  * Zeta Component Database based content type gateway.
@@ -85,90 +87,29 @@ class EzcDatabase extends Gateway
     protected $dbHandler;
 
     /**
-     * Cache for language mapping information
+     * Language mask generator
      *
-     * @var array
+     * @var \ezp\Persistence\Storage\Legacy\Content\Language\MaskGenerator
      */
-    protected $languageMapping;
+    protected $languageMaskGenerator;
 
     /**
      * Creates a new gateway based on $db
      *
      * @param EzcDbHandler $db
      */
-    public function __construct( EzcDbHandler $db )
+    public function __construct(
+        EzcDbHandler $db,
+        Language\MaskGenerator $languageMaskGenerator )
     {
         $this->dbHandler = $db;
-    }
-
-    /**
-     * Get language mapping
-     *
-     * Get mapping of languages to their respective IDs in the database.
-     *
-     * @return array
-     */
-    protected function getLanguageMapping()
-    {
-        if ( $this->languageMapping )
-        {
-            return $this->languageMapping;
-        }
-
-        $query = $this->dbHandler->createSelectQuery();
-        $query
-            ->select(
-                $this->dbHandler->quoteColumn( 'id' ),
-                $this->dbHandler->quoteColumn( 'locale' )
-            )->from(
-                $this->dbHandler->quoteTable( 'ezcontent_language' )
-            );
-
-        $statement = $query->prepare();
-        $statement->execute();
-
-        $this->languageMapping = array();
-        while ( $row = $statement->fetch( \PDO::FETCH_ASSOC ) )
-        {
-            $this->languageMapping[$row['locale']] = (int) $row['id'];
-        }
-
-        return $this->languageMapping;
-    }
-
-    /**
-     * Get language mask
-     *
-     * Return the language mask for a common array of language specifications
-     * for a type name or description.
-     *
-     * @param array $languages
-     * @return int
-     */
-    protected function getLanguageMask( array $languages )
-    {
-        $mask    = 0;
-        if ( isset( $languages['always-available'] ) )
-        {
-            $mask |= $languages['always-available'] ? 1 : 0;
-            unset( $languages['always-available'] );
-        }
-
-        $mapping = $this->getLanguageMapping();
-        foreach ( $languages as $language => $value )
-        {
-            $mask |= $mapping[$language];
-        }
-
-        return $mask;
+        $this->languageMaskGenerator = $languageMaskGenerator;
     }
 
     /**
      * Inserts the given $group.
      *
      * @return mixed Group ID
-     * @todo PDO->lastInsertId() might require a seq name (Oracle?).
-     * @todo Isn't $identifier more the "name"?
      */
     public function insertGroup( Group $group )
     {
@@ -189,7 +130,7 @@ class EzcDatabase extends Gateway
             $q->bindValue( $group->modifierId, null, \PDO::PARAM_INT )
         )->set(
             $this->dbHandler->quoteColumn( 'name' ),
-            $q->bindValue( $group->name[$group->name['always-available']] )
+            $q->bindValue( $group->identifier )
         );
         $stmt = $q->prepare();
         $stmt->execute();
@@ -216,32 +157,141 @@ class EzcDatabase extends Gateway
             $q->bindValue( $group->modifierId, null, \PDO::PARAM_INT )
         )->set(
             $this->dbHandler->quoteColumn( 'name' ),
-            $q->bindValue( $group->name[$group->name['always-available']] )
+            $q->bindValue( $group->identifier )
+        )->where(
+            $q->expr->eq(
+                $this->dbHandler->quoteColumn( 'id' ),
+                $q->bindValue( $group->id, null, \PDO::PARAM_INT )
+            )
         );
 
         $stmt = $q->prepare();
         $stmt->execute();
     }
 
-    protected function insertTypeNameData( Type $type )
+    /**
+     * Returns the number of types in a certain group.
+     *
+     * @param int $groupId
+     * @return int
+     */
+    public function countTypesInGroup( $groupId )
     {
-        $alwaysAvailable = null;
-        $languages = $type->name;
-        $mapping = $this->getLanguageMapping();
-        if ( isset( $languages['always-available'] ) )
+        $q = $this->dbHandler->createSelectQuery();
+        $q->select(
+            $q->alias(
+                $q->expr->count(
+                    $this->dbHandler->quoteColumn( 'contentclass_id' )
+                ),
+                'count'
+            )
+        )->from(
+            $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' )
+        )->where(
+            $q->expr->eq(
+                $this->dbHandler->quoteColumn( 'group_id' ),
+                $q->bindValue( $groupId, null, \PDO::PARAM_INT )
+            )
+        );
+
+        $stmt = $q->prepare();
+        $stmt->execute();
+
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Returns the number of Groups the type is assigned to.
+     *
+     * @param int $typeId
+     * @param int $status
+     * @return int
+     */
+    public function countGroupsForType( $typeId, $status )
+    {
+        $q = $this->dbHandler->createSelectQuery();
+        $q->select(
+            $q->alias(
+                $q->expr->count(
+                    $this->dbHandler->quoteColumn( 'group_id' )
+                ),
+                'count'
+            )
+        )->from(
+            $this->dbHandler->quoteTable( 'ezcontentclass_classgroup' )
+        )->where(
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_id' ),
+                    $q->bindValue( $typeId, null, \PDO::PARAM_INT )
+                )
+            ),
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_version' ),
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
+                )
+            )
+        );
+
+        $stmt = $q->prepare();
+        $stmt->execute();
+
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Deletes the Group with the given $groupId.
+     *
+     * @param int $groupId
+     * @return void
+     */
+    public function deleteGroup( $groupId )
+    {
+        $q = $this->dbHandler->createDeleteQuery();
+        $q->deleteFrom( $this->dbHandler->quoteTable( 'ezcontentclassgroup' ) )
+            ->where(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'id' ),
+                    $q->bindValue( $groupId, null, \PDO::PARAM_INT )
+                )
+            );
+        $stmt = $q->prepare();
+        $stmt->execute();
+    }
+
+    /**
+     * Inserts data into contentclass_name.
+     *
+     * @param int $typeId
+     * @param int $typeStatus
+     * @param string[] $languages
+     * @return void
+     */
+    protected function insertTypeNameData( $typeId, $typeStatus, array $languages )
+    {
+        $tmpLanguages = $languages;
+        if ( isset( $tmpLanguages['always-available'] ) )
         {
-            $alwaysAvailable = $languages['always-available'];
-            unset( $languages['always-available'] );
+            unset( $tmpLanguages['always-available'] );
         }
 
-        foreach ( $languages as $language => $name )
+        foreach ( $tmpLanguages as $language => $name )
         {
             $query = $this->dbHandler->createInsertQuery();
             $query
                 ->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass_name' ) )
-                ->set( 'contentclass_id', $query->bindValue( $type->id ) )
-                ->set( 'contentclass_version', $query->bindValue( $type->status ) )
-                ->set( 'language_id', $query->bindValue( $mapping[$language] | ( $alwaysAvailable === $language ? 1 : 0 ) ) )
+                ->set( 'contentclass_id', $query->bindValue( $typeId ) )
+                ->set( 'contentclass_version', $query->bindValue( $typeStatus ) )
+                ->set( 'language_id', $query->bindValue(
+                    $this->languageMaskGenerator->generateLanguageIndicator(
+                        $language,
+                        $this->languageMaskGenerator->isLanguageAlwaysAvailable(
+                            $language,
+                            $languages
+                        )
+                    )
+                ) )
                 ->set( 'language_locale', $query->bindValue( $language ) )
                 ->set( 'name', $query->bindValue( $name ) );
             $query->prepare()->execute();
@@ -253,7 +303,6 @@ class EzcDatabase extends Gateway
      *
      * @param Type $createStruct
      * @return mixed Type ID
-     * @todo PDO->lastInsertId() might require a seq name (Oracle?).
      */
     public function insertType( Type $type )
     {
@@ -273,7 +322,7 @@ class EzcDatabase extends Gateway
         $q->prepare()->execute();
 
         $type->id = $this->dbHandler->lastInsertId();
-        $this->insertTypeNameData( $type );
+        $this->insertTypeNameData( $type->id, $type->status, $type->name );
 
         return $type->id;
     }
@@ -316,10 +365,23 @@ class EzcDatabase extends Gateway
             $q->bindValue( $type->isContainer ? 1 : 0, null, \PDO::PARAM_INT )
         )->set(
             $this->dbHandler->quoteColumn( 'language_mask' ),
-            $q->bindValue( $this->getLanguageMask( $type->name ), null, \PDO::PARAM_INT )
+            $q->bindValue(
+                $this->languageMaskGenerator->generateLanguageMask( $type->name ),
+                null,
+                \PDO::PARAM_INT
+            )
         )->set(
             $this->dbHandler->quoteColumn( 'initial_language_id' ),
             $q->bindValue( $type->initialLanguageId, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'sort_field' ),
+            $q->bindValue( $type->sortField, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'sort_order' ),
+            $q->bindValue( $type->sortOrder, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'always_available' ),
+            $q->bindValue( (int) $type->defaultAlwaysAvailable, null, \PDO::PARAM_INT )
         );
     }
 
@@ -333,7 +395,8 @@ class EzcDatabase extends Gateway
      */
     public function insertGroupAssignement( $groupId, $typeId, $status )
     {
-        $group = $this->loadGroupData( $groupId );
+        $groups = $this->loadGroupData( $groupId );
+        $group = $groups[0];
 
         $q = $this->dbHandler->createInsertQuery();
         $q->insertInto(
@@ -393,9 +456,45 @@ class EzcDatabase extends Gateway
      * Loads data about Group with $groupId.
      *
      * @param mixed $groupId
-     * @return string[]
+     * @return string[][]
      */
-    protected function loadGroupData( $groupId )
+    public function loadGroupData( $groupId )
+    {
+        $q = $this->createGroupLoadQuery();
+        $q->where(
+            $q->expr->eq(
+                $this->dbHandler->quoteColumn( 'id' ),
+                $q->bindValue( $groupId, null, \PDO::PARAM_INT )
+            )
+        );
+
+        $stmt = $q->prepare();
+        $stmt->execute();
+
+        return $stmt->fetchAll( \PDO::FETCH_ASSOC );
+    }
+
+    /**
+     * Returns an array with data about all Group objects.
+     *
+     * @return string[][]
+     */
+    public function loadAllGroupsData()
+    {
+        $q = $this->createGroupLoadQuery();
+
+        $stmt = $q->prepare();
+        $stmt->execute();
+
+        return $stmt->fetchAll( \PDO::FETCH_ASSOC );
+    }
+
+    /**
+     * Creates the basic query to load Group data.
+     *
+     * @return ezcQuerySelect
+     */
+    protected function createGroupLoadQuery()
     {
         $q = $this->dbHandler->createSelectQuery();
         $q->select(
@@ -407,29 +506,58 @@ class EzcDatabase extends Gateway
             $this->dbHandler->quoteColumn( 'name' )
         )->from(
             $this->dbHandler->quoteTable( 'ezcontentclassgroup' )
-        )->where(
-            $q->expr->eq(
-                $this->dbHandler->quoteColumn( 'id' ),
-                $q->bindValue( $groupId, null, \PDO::PARAM_INT )
+        );
+        return $q;
+    }
+
+    /**
+     * Loads data for all Types in $status in $groupId.
+     *
+     * @param mixed $groupId
+     * @param int $status
+     * @return string[][]
+     */
+    public function loadTypesDataForGroup( $groupId, $status )
+    {
+        $q = $this->getLoadTypeQuery();
+        $q->where(
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn(
+                        'group_id',
+                        'ezcontentclass_classgroup'
+                    ),
+                    $q->bindValue( $groupId, null, \PDO::PARAM_INT )
+                ),
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn(
+                        'version',
+                        'ezcontentclass'
+                    ),
+                    $q->bindValue( $status, null, \PDO::PARAM_INT )
+                )
             )
         );
 
         $stmt = $q->prepare();
         $stmt->execute();
 
-        return $stmt->fetch( \PDO::FETCH_ASSOC );
+        return $stmt->fetchAll( \PDO::FETCH_ASSOC );
     }
 
     /**
      * Inserts a $fieldDefinition for $typeId.
      *
      * @param mixed $typeId
+     * @param int $status
      * @param FieldDefinition $fieldDefinition
+     * @param StorageFieldDefinition $storageFieldDef
      * @return mixed Field definition ID
-     * @todo What about fieldTypeConstraints and defaultValue?
-     * @todo PDO->lastInsertId() might require a seq name (Oracle?).
      */
-    public function insertFieldDefinition( $typeId, $status, FieldDefinition $fieldDefinition )
+    public function insertFieldDefinition(
+        $typeId, $status, FieldDefinition $fieldDefinition,
+        StorageFieldDefinition $storageFieldDef
+    )
     {
         $q = $this->dbHandler->createInsertQuery();
         $q->insertInto( $this->dbHandler->quoteTable( 'ezcontentclass_attribute' ) );
@@ -440,7 +568,7 @@ class EzcDatabase extends Gateway
             $this->dbHandler->quoteColumn( 'version' ),
             $q->bindValue( $status, null, \PDO::PARAM_INT )
         );
-        $this->setCommonFieldColumns( $q, $fieldDefinition );
+        $this->setCommonFieldColumns( $q, $fieldDefinition, $storageFieldDef );
 
         $stmt = $q->prepare();
         $stmt->execute();
@@ -455,7 +583,10 @@ class EzcDatabase extends Gateway
      * @param FieldDefinition $fieldDefinition
      * @return void
      */
-    protected function setCommonFieldColumns( \ezcQuery $q, FieldDefinition $fieldDefinition )
+    protected function setCommonFieldColumns(
+        \ezcQuery $q, FieldDefinition $fieldDefinition,
+        StorageFieldDefinition $storageFieldDef
+    )
     {
         $q->set(
             $this->dbHandler->quoteColumn( 'serialized_name_list' ),
@@ -484,16 +615,51 @@ class EzcDatabase extends Gateway
         )->set(
             $this->dbHandler->quoteColumn( 'is_information_collector' ),
             $q->bindValue( ( $fieldDefinition->isInfoCollector ? 1 : 0 ), null, \PDO::PARAM_INT )
-        /*
-         * fieldTypeConstraints?
         )->set(
-            $this->dbHandler->quoteIdentifier( '' ),
-            $q->bindValue( $fieldDefinition-> )
-        */
+            $this->dbHandler->quoteColumn( 'data_float1' ),
+            $q->bindValue( $storageFieldDef->dataFloat1 )
         )->set(
-            // @todo: Correct?
+            $this->dbHandler->quoteColumn( 'data_float2' ),
+            $q->bindValue( $storageFieldDef->dataFloat2 )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_float3' ),
+            $q->bindValue( $storageFieldDef->dataFloat3 )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_float4' ),
+            $q->bindValue( $storageFieldDef->dataFloat4 )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_int1' ),
+            $q->bindValue( $storageFieldDef->dataInt1, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_int2' ),
+            $q->bindValue( $storageFieldDef->dataInt2, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_int3' ),
+            $q->bindValue( $storageFieldDef->dataInt3, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_int4' ),
+            $q->bindValue( $storageFieldDef->dataInt4, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_text1' ),
+            $q->bindValue( $storageFieldDef->dataText1 )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_text2' ),
+            $q->bindValue( $storageFieldDef->dataText2 )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_text3' ),
+            $q->bindValue( $storageFieldDef->dataText3 )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_text4' ),
+            $q->bindValue( $storageFieldDef->dataText4 )
+        )->set(
+            $this->dbHandler->quoteColumn( 'data_text5' ),
+            $q->bindValue( $storageFieldDef->dataText5 )
+        )->set(
             $this->dbHandler->quoteColumn( 'serialized_data_text' ),
-            $q->bindValue( serialize( $fieldDefinition->defaultValue ) )
+            $q->bindValue( serialize( $storageFieldDef->serializedDataText ) )
+        )->set(
+            $this->dbHandler->quoteColumn( 'is_searchable' ),
+            $q->bindValue( ( $fieldDefinition->isSearchable ? 1 : 0 ), null, \PDO::PARAM_INT )
         );
     }
 
@@ -538,9 +704,14 @@ class EzcDatabase extends Gateway
      * @param mixed $typeId
      * @param int $status
      * @param FieldDefinition $fieldDefinition
+     * @param StorageFieldDefinition $storageFieldDef
      * @return void
+     * @TODO Handle StorageFieldDefinition
      */
-    public function updateFieldDefinition( $typeId, $status, FieldDefinition $fieldDefinition )
+    public function updateFieldDefinition(
+        $typeId, $status, FieldDefinition $fieldDefinition,
+        StorageFieldDefinition $storageFieldDef
+    )
     {
         $q = $this->dbHandler->createUpdateQuery();
         $q
@@ -561,10 +732,36 @@ class EzcDatabase extends Gateway
                     $q->bindValue( $typeId, null, \PDO::PARAM_INT )
                 )
             );
-        $this->setCommonFieldColumns( $q, $fieldDefinition );
+        $this->setCommonFieldColumns( $q, $fieldDefinition, $storageFieldDef );
 
         $stmt = $q->prepare();
         $stmt->execute();
+    }
+
+    /**
+     * Deletes all name data for $typeId in $version.
+     *
+     * @param int $typeId
+     * @param int $typeStatus
+     * @return void
+     */
+    protected function deleteTypeNameData( $typeId, $typeStatus )
+    {
+        $query = $this->dbHandler->createDeleteQuery();
+        $query->deleteFrom( 'ezcontentclass_name' )
+            ->where(
+                $query->expr->lAnd(
+                    $query->expr->eq(
+                        $this->dbHandler->quoteColumn( 'contentclass_id' ),
+                        $query->bindValue( $typeId, null, \PDO::PARAM_INT )
+                    ),
+                    $query->expr->eq(
+                        $this->dbHandler->quoteColumn( 'contentclass_version' ),
+                        $query->bindValue( $typeStatus, null, \PDO::PARAM_INT )
+                    )
+                )
+            );
+        $query->prepare()->execute();
     }
 
     /**
@@ -597,6 +794,9 @@ class EzcDatabase extends Gateway
 
         $stmt = $q->prepare();
         $stmt->execute();
+
+        $this->deleteTypeNameData( $typeId, $status );
+        $this->insertTypeNameData( $typeId, $status, $updateStruct->name );
     }
 
     /**
@@ -607,6 +807,32 @@ class EzcDatabase extends Gateway
      * @return array(int=>array(string=>mixed)) Data rows.
      */
     public function loadTypeData( $typeId, $status )
+    {
+        $q = $this->getLoadTypeQuery();
+        $q->where(
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'id', 'ezcontentclass' ),
+                    $q->bindValue( $typeId )
+                ),
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version', 'ezcontentclass' ),
+                    $q->bindValue( $status )
+                )
+            )
+        );
+        $stmt = $q->prepare();
+        $stmt->execute();
+
+        return $stmt->fetchAll( \PDO::FETCH_ASSOC );
+    }
+
+    /**
+     * Returns a basic query to retrieve Type data.
+     *
+     * @return ezcQuerySelect
+     */
+    protected function getLoadTypeQuery()
     {
         $q = $this->dbHandler->createSelectQuery();
 
@@ -669,22 +895,41 @@ class EzcDatabase extends Gateway
                     )
                 )
             )
-        )->where(
-            $q->expr->lAnd(
-                $q->expr->eq(
-                    $this->dbHandler->quoteColumn( 'id', 'ezcontentclass' ),
-                    $q->bindValue( $typeId )
+        );
+
+        return $q;
+    }
+
+    /**
+     * Counts the number of instances that exists of the identified type.
+     *
+     * @param int $typeId
+     * @param int $version
+     * @return int
+     */
+    public function countInstancesOfType( $typeId, $version )
+    {
+        $q = $this->dbHandler->createSelectQuery();
+        $q->select(
+            $q->alias(
+                $q->expr->count(
+                    $this->dbHandler->quoteColumn( 'id' )
                 ),
-                $q->expr->eq(
-                    $this->dbHandler->quoteColumn( 'version', 'ezcontentclass' ),
-                    $q->bindValue( $status )
-                )
+                'count'
+            )
+        )->from(
+            $this->dbHandler->quoteTable( 'ezcontentobject' )
+        )->where(
+            $q->expr->eq(
+                $this->dbHandler->quoteColumn( 'contentclass_id' ),
+                $q->bindValue( $typeId, null, \PDO::PARAM_INT )
             )
         );
+
         $stmt = $q->prepare();
         $stmt->execute();
 
-        return $stmt->fetchAll( \PDO::FETCH_ASSOC );
+        return (int)$stmt->fetchColumn();
     }
 
     /**
@@ -767,6 +1012,84 @@ class EzcDatabase extends Gateway
             )
         );
         $stmt = $q->prepare();
+        $stmt->execute();
+    }
+
+    /**
+     * Publishes the Type with $typeId from $sourceVersion to $targetVersion,
+     * including its fields
+     *
+     * @param int $typeId
+     * @param int $sourceVersion
+     * @param int $targetVersion
+     * @return void
+     */
+    public function publishTypeAndFields( $typeId, $sourceVersion, $targetVersion )
+    {
+        $query = $this->dbHandler->createUpdateQuery();
+        $query->update(
+            $this->dbHandler->quoteTable( 'ezcontentclass' )
+        )->set(
+            $this->dbHandler->quoteColumn( 'version' ),
+            $query->bindValue( $targetVersion, null, \PDO::PARAM_INT )
+        )->where(
+            $query->expr->lAnd(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'id' ),
+                    $query->bindValue( $typeId, null, \PDO::PARAM_INT )
+                ),
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version' ),
+                    $query->bindValue( $sourceVersion, null, \PDO::PARAM_INT )
+                )
+            )
+        );
+
+        $stmt = $query->prepare();
+        $stmt->execute();
+
+        $query = $this->dbHandler->createUpdateQuery();
+        $query->update(
+            $this->dbHandler->quoteTable( 'ezcontentclass_attribute' )
+        )->set(
+            $this->dbHandler->quoteColumn( 'version' ),
+            $query->bindValue( $targetVersion, null, \PDO::PARAM_INT )
+        )->where(
+            $query->expr->lAnd(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_id' ),
+                    $query->bindValue( $typeId, null, \PDO::PARAM_INT )
+                ),
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version' ),
+                    $query->bindValue( $sourceVersion, null, \PDO::PARAM_INT )
+                )
+            )
+        );
+
+        $stmt = $query->prepare();
+        $stmt->execute();
+
+        $query = $this->dbHandler->createUpdateQuery();
+        $query->update(
+            $this->dbHandler->quoteTable( 'ezcontentclass_name' )
+        )->set(
+            $this->dbHandler->quoteColumn( 'contentclass_version' ),
+            $query->bindValue( $targetVersion, null, \PDO::PARAM_INT )
+        )->where(
+            $query->expr->lAnd(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_id' ),
+                    $query->bindValue( $typeId, null, \PDO::PARAM_INT )
+                ),
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentclass_version' ),
+                    $query->bindValue( $sourceVersion, null, \PDO::PARAM_INT )
+                )
+            )
+        );
+
+        $stmt = $query->prepare();
         $stmt->execute();
     }
 

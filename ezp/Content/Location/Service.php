@@ -9,15 +9,15 @@
 
 namespace ezp\Content\Location;
 use ezp\Base\Exception,
-    ezp\Base\Service as BaseService,
-    ezp\Content\Location,
-    ezp\Content\Proxy,
-    ezp\Content\Section,
     ezp\Base\Exception\NotFound,
-    ezp\Base\Exception\InvalidArgumentType,
     ezp\Base\Exception\Logic,
+    ezp\Base\Service as BaseService,
+    ezp\Base\Collection\Lazy,
+    ezp\Content\Location,
+    ezp\Content\Location\Exception\NotFound as LocationNotFound,
+    ezp\Base\Proxy,
+    ezp\Content\Section,
     ezp\Persistence\Content\Location as LocationValue,
-    ezp\Persistence\ValueObject,
     ezp\Persistence\Content\Location\CreateStruct,
     ezp\Persistence\Content\Location\UpdateStruct;
 
@@ -34,31 +34,51 @@ class Service extends BaseService
      * @param \ezp\Content\Location $targetLocation
      *
      * @return \ezp\Content\Location The newly created subtree
+     * @throws \ezp\Content\Location\Exception\NotFound
      */
-    public function copy( Location $subtree, Location $targetLocation )
+    public function copySubtree( Location $subtree, Location $targetLocation )
     {
+        try
+        {
+            return $this->buildDomainObject(
+                $this->handler->locationHandler()->copySubtree(
+                    $subtree->id,
+                    $targetLocation->id )
+            );
+        }
+        catch( NotFound $e )
+        {
+            throw new LocationNotFound( $e->identifier, $e );
+        }
     }
 
     /**
      * Loads a location object from its $locationId
      * @param integer $locationId
      * @return \ezp\Content\Location
-     * @throws \ezp\Base\Exception\NotFound if no location is available with $locationId
+     * @throws \ezp\Content\Location\Exception\NotFound if no location is available with $locationId
      */
     public function load( $locationId )
     {
-        $locationVO = $this->handler->locationHandler()->load( $locationId );
-        if ( !$locationVO instanceof LocationValue )
+        try
         {
-            throw new NotFound( 'Location', $locationId );
+            $locationVO = $this->handler->locationHandler()->load( $locationId );
+        }
+        catch ( NotFound $e )
+        {
+            throw new LocationNotFound( $locationId, $e );
         }
 
         return $this->buildDomainObject( $locationVO );
     }
 
+    /**
+     * @param \ezp\Content\Location $location
+     * @return \ezp\Content\Location[]
+     */
     public function children( Location $location )
     {
-
+        return array();
     }
 
     /**
@@ -76,7 +96,7 @@ class Service extends BaseService
         }
 
         $struct = new CreateStruct();
-        foreach ( $location->properties() as $name => $value )
+        foreach ( $location->properties() as $name )
         {
             if ( property_exists( $struct, $name ) )
             {
@@ -86,8 +106,9 @@ class Service extends BaseService
 
         $struct->invisible = ( $location->parent->invisible == true ) || ( $location->parent->hidden == true );
         $struct->contentId = $location->contentId;
+        $struct->priority = (int)$location->priority;
 
-        $vo = $this->handler->locationHandler()->createLocation( $struct );
+        $vo = $this->handler->locationHandler()->create( $struct );
         $location->setState( array( 'properties' => $vo ) );
 
         // repo/storage stuff
@@ -104,7 +125,7 @@ class Service extends BaseService
     public function update( Location $location )
     {
         $struct = new UpdateStruct;
-        foreach ( $location->properties() as $name => $value )
+        foreach ( $location->properties() as $name )
         {
             if ( property_exists( $struct, $name ) )
             {
@@ -112,7 +133,7 @@ class Service extends BaseService
             }
         }
 
-        if ( !$this->handler->locationHandler()->updateLocation( $struct, $location->id ) )
+        if ( !$this->handler->locationHandler()->update( $struct, $location->id ) )
         {
             throw new Logic( "Location #{$location->id}", 'Could not be updated' );
         }

@@ -9,6 +9,7 @@
 
 namespace ezp\Persistence\Storage\Legacy\Content\Search\Gateway;
 use ezp\Persistence\Storage\Legacy\Content\Search\Gateway,
+    ezp\Persistence\Storage\Legacy\EzcDbHandler,
     ezp\Persistence\Content\Criterion;
 
 /**
@@ -17,18 +18,35 @@ use ezp\Persistence\Storage\Legacy\Content\Search\Gateway,
 abstract class CriterionHandler
 {
     /**
-     * Map of criterion operators to the respective function names in the zeta 
+     * Map of criterion operators to the respective function names in the zeta
      * Database abstraction layer.
      *
      * @var array
      */
     protected $comparatorMap = array(
-        Criterion\Operator::EQ      => "eq",
-        Criterion\Operator::GT      => "gt",
-        Criterion\Operator::GTE     => "gte",
-        Criterion\Operator::LT      => "lt",
-        Criterion\Operator::LTE     => "lte",
+        Criterion\Operator::EQ => "eq",
+        Criterion\Operator::GT => "gt",
+        Criterion\Operator::GTE => "gte",
+        Criterion\Operator::LT => "lt",
+        Criterion\Operator::LTE => "lte",
     );
+
+    /**
+     * Database handler
+     *
+     * @var ezp\Persistence\Storage\Legacy\EzcDbHandler
+     */
+    protected $dbHandler;
+
+    /**
+     * Creates a new criterion handler
+     *
+     * @param EzcDbHandler $dbHandler
+     */
+    public function __construct( EzcDbHandler $dbHandler )
+    {
+        $this->dbHandler = $dbHandler;
+    }
 
     /**
      * Check if this criterion handler accepts to handle the given criterion.

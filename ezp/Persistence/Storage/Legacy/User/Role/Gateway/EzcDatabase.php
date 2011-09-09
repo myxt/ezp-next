@@ -79,10 +79,12 @@ class EzcDatabase extends Gateway
             ->set(
                 $this->handler->quoteColumn( 'name' ),
                 $query->bindValue( $role->name )
-            )->where( $query->expr->eq(
-                $this->handler->quoteColumn( 'id' ),
-                $query->bindValue( $role->id )
-            ) );
+            )->where(
+                $query->expr->eq(
+                    $this->handler->quoteColumn( 'id' ),
+                    $query->bindValue( $role->id )
+                )
+            );
         $query->prepare()->execute();
     }
 
@@ -96,10 +98,12 @@ class EzcDatabase extends Gateway
         $query = $this->handler->createDeleteQuery();
         $query
             ->deleteFrom( $this->handler->quoteTable( 'ezrole' ) )
-            ->where( $query->expr->eq(
-                $this->handler->quoteColumn( 'id' ),
-                $query->bindValue( $roleId )
-            ) );
+            ->where(
+                $query->expr->eq(
+                    $this->handler->quoteColumn( 'id' ),
+                    $query->bindValue( $roleId )
+                )
+            );
         $query->prepare()->execute();
     }
 
@@ -117,7 +121,7 @@ class EzcDatabase extends Gateway
             ->insertInto( $this->handler->quoteTable( 'ezpolicy' ) )
             ->set(
                 $this->handler->quoteColumn( 'function_name' ),
-                $query->bindValue( $policy->moduleFunction )
+                $query->bindValue( $policy->function )
             )->set(
                 $this->handler->quoteColumn( 'module_name' ),
                 $query->bindValue( $policy->module )
@@ -147,16 +151,18 @@ class EzcDatabase extends Gateway
         $query = $this->handler->createDeleteQuery();
         $query
             ->deleteFrom( $this->handler->quoteTable( 'ezpolicy' ) )
-            ->where( $query->expr->lAnd(
-                $query->expr->eq(
-                    $this->handler->quoteColumn( 'id' ),
-                    $query->bindValue( $policyId )
-                ),
-                $query->expr->eq(
-                    $this->handler->quoteColumn( 'role_id' ),
-                    $query->bindValue( $roleId )
+            ->where(
+                $query->expr->lAnd(
+                    $query->expr->eq(
+                        $this->handler->quoteColumn( 'id' ),
+                        $query->bindValue( $policyId )
+                    ),
+                    $query->expr->eq(
+                        $this->handler->quoteColumn( 'role_id' ),
+                        $query->bindValue( $roleId )
+                    )
                 )
-            ) );
+            );
         $query->prepare()->execute();
 
         // @TODO: Cascade on delete to policy limitations and limitation

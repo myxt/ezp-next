@@ -162,11 +162,12 @@ class ModelStorage implements Observer, ModelStorageInterface
      * @internal Observable is used to listen for events on object in storage
      * @param \ezp\Base\Observable $subject
      * @param string $event
+     * @param array|null $arguments
      * @return \ezp\Base\Observer
      * @throws \ezp\Base\Exception\InvalidArgumentValue If object is not found by object_hash
      * @throws \ezp\Base\Exception\Logic If primaryIdString found by object hash was not found
      */
-    public function update( Observable $subject, $event = 'update' )
+    public function update( Observable $subject, $event = 'update', array $arguments = null )
     {
         if ( $event === 'destruct' )
             $this->remove( $subject );

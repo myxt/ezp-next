@@ -10,6 +10,7 @@
 namespace ezp\Persistence\Storage\Legacy\Tests\Content\Location\Gateway;
 use ezp\Persistence\Storage\Legacy\Tests\TestCase,
     ezp\Persistence\Content,
+    ezp\Persistence\Content\Location,
     ezp\Persistence\Content\Location\CreateStruct,
     ezp\Persistence\Storage\Legacy\Content\Location\Gateway\EzcDatabase,
     ezp\Persistence;
@@ -71,6 +72,16 @@ class EzpDatabaseTest extends TestCase
         );
     }
 
+    /**
+     * @expectedException \ezp\Base\Exception\NotFound
+     */
+    public function testLoadInvalidLocation()
+    {
+        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
+        $handler = $this->getLocationGateway();
+        $data = $handler->getBasicNodeData( 1337 );
+    }
+
     public function testMoveSubtreePathUpdate()
     {
         $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
@@ -80,14 +91,14 @@ class EzpDatabaseTest extends TestCase
         $query = $this->handler->createSelectQuery();
         $this->assertQueryResult(
             array(
-                array( 65, '/1/2/' ),
-                array( 67, '/1/2/77/69/' ),
-                array( 69, '/1/2/77/69/70/71/' ),
-                array( 73, '/1/2/77/69/72/75/' ),
-                array( 75, '/1/2/77/' ),
+                array( 65, '/1/2/', 1 ),
+                array( 67, '/1/2/77/69/', 3 ),
+                array( 69, '/1/2/77/69/70/71/', 5 ),
+                array( 73, '/1/2/77/69/72/75/', 5 ),
+                array( 75, '/1/2/77/', 2 ),
             ),
             $query
-                ->select( 'contentobject_id', 'path_string' )
+                ->select( 'contentobject_id', 'path_string', 'depth' )
                 ->from( 'ezcontentobject_tree' )
                 ->where( $query->expr->in( 'node_id', array( 69, 71, 75, 77, 2 ) ) )
         );
@@ -253,36 +264,17 @@ class EzpDatabaseTest extends TestCase
         );
     }
 
-    public function testUpdatePriority()
-    {
-        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
-        $handler = $this->getLocationGateway();
-        $handler->updatePriority( 70, 23 );
-
-        $query = $this->handler->createSelectQuery();
-        $this->assertQueryResult(
-            array(
-                array( 1, 0 ),
-                array( 2, 0 ),
-                array( 69, 0 ),
-                array( 70, 23 ),
-            ),
-            $query
-                ->select( 'node_id', 'priority' )
-                ->from( 'ezcontentobject_tree' )
-                ->where( $query->expr->in( 'node_id', array( 1, 2, 69, 70 ) ) )
-        );
-    }
-
     public function testCreateLocation()
     {
         $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
         $handler = $this->getLocationGateway();
-        $handler->createLocation(
-            new CreateStruct( array(
-                'contentId' => 68,
-                'remoteId'  => 'some_id',
-            ) ),
+        $handler->create(
+            new CreateStruct(
+                array(
+                    'contentId' => 68,
+                    'remoteId' => 'some_id',
+                )
+            ),
             array(
                 'node_id' => '77',
                 'depth' => '2',
@@ -336,17 +328,19 @@ class EzpDatabaseTest extends TestCase
 
         $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
         $handler = $this->getLocationGateway();
-        $handler->createLocation(
-            new CreateStruct( array(
-                'contentId'      => 68,
-                'contentVersion' => 1,
-                'remoteId'       => 'some_id',
-                'mainLocationId' => 42,
-                'priority'       => 1,
-                'remoteId'       => 'some_id',
-                'sortField'      => 1,
-                'sortOrder'      => 1,
-            ) ),
+        $handler->create(
+            new CreateStruct(
+                array(
+                    'contentId' => 68,
+                    'contentVersion' => 1,
+                    'remoteId' => 'some_id',
+                    'mainLocationId' => 42,
+                    'priority' => 1,
+                    'remoteId' => 'some_id',
+                    'sortField' => 1,
+                    'sortOrder' => 1,
+                )
+            ),
             array(
                 'node_id' => '77',
                 'depth' => '2',
@@ -361,6 +355,101 @@ class EzpDatabaseTest extends TestCase
                 ->select( $field )
                 ->from( 'ezcontentobject_tree' )
                 ->where( $query->expr->eq( 'node_id', 228 ) )
+        );
+    }
+
+    public static function getCreateLocationReturnValues()
+    {
+        return array(
+            array( 'id', 228 ),
+            array( 'priority', 1 ),
+            array( 'hidden', false ),
+            array( 'invisible', false ),
+            array( 'remoteId', 'some_id' ),
+            array( 'contentId', '68' ),
+            array( 'parentId', '77' ),
+            array( 'pathIdentificationString', '' ),
+            array( 'pathString', '' ),
+            array( 'mainLocationId', 228 ),
+            array( 'depth', 3 ),
+            array( 'sortField', 1 ),
+            array( 'sortOrder', 1 ),
+        );
+    }
+
+    /**
+     * @depends testCreateLocation
+     * @dataProvider getCreateLocationReturnValues
+     */
+    public function testCreateLocationReturnValues( $field, $value )
+    {
+        if ( $value === null )
+        {
+            $this->markTestIncomplete( 'Proper value setting yet unknown.' );
+        }
+
+        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
+        $handler = $this->getLocationGateway();
+        $location = $handler->create(
+            new CreateStruct(
+                array(
+                    'contentId' => 68,
+                    'contentVersion' => 1,
+                    'remoteId' => 'some_id',
+                    'mainLocationId' => true,
+                    'priority' => 1,
+                    'remoteId' => 'some_id',
+                    'sortField' => 1,
+                    'sortOrder' => 1,
+                )
+            ),
+            array(
+                'node_id' => '77',
+                'depth' => '2',
+                'path_string' => '/1/2/77/',
+            )
+        );
+
+        $this->assertTrue( $location instanceof Location );
+        $this->assertEquals( $value, $location->$field );
+    }
+
+    public static function getUpdateLocationData()
+    {
+        return array(
+            array( 'priority', 23 ),
+            array( 'remote_id', 'someNewHash' ),
+            array( 'sort_field', 4 ),
+            array( 'sort_order', 4 ),
+        );
+    }
+
+    /**
+     * @dataProvider getUpdateLocationData
+     */
+    public function testUpdateLocation( $field, $value )
+    {
+        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
+        $handler = $this->getLocationGateway();
+        $handler->update(
+            new Location\UpdateStruct(
+                array(
+                    'priority' => 23,
+                    'remoteId' => 'someNewHash',
+                    'sortField' => 4,
+                    'sortOrder' => 4,
+                )
+            ),
+            70
+        );
+
+        $query = $this->handler->createSelectQuery();
+        $this->assertQueryResult(
+            array( array( $value ) ),
+            $query
+                ->select( $field )
+                ->from( 'ezcontentobject_tree' )
+                ->where( $query->expr->in( 'node_id', array( 70 ) ) )
         );
     }
 
@@ -393,17 +482,19 @@ class EzpDatabaseTest extends TestCase
 
         $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
         $handler = $this->getLocationGateway();
-        $handler->createLocation(
-            new CreateStruct( array(
-                'contentId'      => 68,
-                'contentVersion' => 1,
-                'remoteId'       => 'some_id',
-                'mainLocationId' => 1,
-                'priority'       => 1,
-                'remoteId'       => 'some_id',
-                'sortField'      => 1,
-                'sortOrder'      => 1,
-            ) ),
+        $handler->create(
+            new CreateStruct(
+                array(
+                    'contentId' => 68,
+                    'contentVersion' => 1,
+                    'remoteId' => 'some_id',
+                    'mainLocationId' => 1,
+                    'priority' => 1,
+                    'remoteId' => 'some_id',
+                    'sortField' => 1,
+                    'sortOrder' => 1,
+                )
+            ),
             array(
                 'node_id' => '77',
                 'depth' => '2',
@@ -466,6 +557,117 @@ class EzpDatabaseTest extends TestCase
             $query
                 ->select( 'node_id', 'path_string' )
                 ->from( 'ezcontentobject_trash' )
+        );
+    }
+
+    public static function getUntrashedLocationValues()
+    {
+        return array(
+            array( 'contentobject_is_published', 1 ),
+            array( 'contentobject_version', 1 ),
+            array( 'depth', 2 ),
+            array( 'is_hidden', 0 ),
+            array( 'is_invisible', 0 ),
+            array( 'main_node_id', 228 ),
+            array( 'node_id', 228 ),
+            array( 'parent_node_id', 2 ),
+            array( 'path_identification_string', '' ),
+            array( 'path_string', '/1/2/228/' ),
+            array( 'priority', 0 ),
+            array( 'remote_id', '9cec85d730eec7578190ee95ce5a36f5' ),
+            array( 'sort_field', 2 ),
+            array( 'sort_order', 1 ),
+        );
+    }
+
+    /**
+     * @dataProvider getUntrashedLocationValues
+     */
+    public function testUntrashLocationDefault( $property, $value )
+    {
+        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
+        $handler = $this->getLocationGateway();
+        $handler->trashSubtree( '/1/2/69/' );
+
+        $handler->untrashLocation( 69 );
+
+        $query = $this->handler->createSelectQuery();
+        $this->assertQueryResult(
+            array( array( $value ) ),
+            $query
+                ->select( $property )
+                ->from( 'ezcontentobject_tree' )
+                ->where( $query->expr->in( 'contentobject_id', array( 67 ) ) )
+        );
+    }
+
+    public function testUntrashLocationNewParent()
+    {
+        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
+        $handler = $this->getLocationGateway();
+        $handler->trashSubtree( '/1/2/69/' );
+
+        $handler->untrashLocation( 69, 1 );
+
+        $query = $this->handler->createSelectQuery();
+        $this->assertQueryResult(
+            array( array( '228', '1', '/1/228/' ) ),
+            $query
+                ->select( 'node_id', 'parent_node_id', 'path_string' )
+                ->from( 'ezcontentobject_tree' )
+                ->where( $query->expr->in( 'contentobject_id', array( 67 ) ) )
+        );
+    }
+
+    /**
+     * @expectedException \ezp\Base\Exception\NotFound
+     */
+    public function testUntrashInvalidLocation()
+    {
+        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
+        $handler = $this->getLocationGateway();
+
+        $handler->untrashLocation( 23 );
+    }
+
+    /**
+     * @expectedException \ezp\Base\Exception\NotFound
+     */
+    public function testUntrashLocationInvalidParent()
+    {
+        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
+        $handler = $this->getLocationGateway();
+        $handler->trashSubtree( '/1/2/69/' );
+
+        $handler->untrashLocation( 69, 1337 );
+    }
+
+    /**
+     * @expectedException \ezp\Base\Exception\NotFound
+     */
+    public function testUntrashLocationInvalidOldParent()
+    {
+        $this->insertDatabaseFixture( __DIR__ . '/_fixtures/full_example_tree.php' );
+        $handler = $this->getLocationGateway();
+        $handler->trashSubtree( '/1/2/69/' );
+
+        $handler->untrashLocation( 69 );
+        $handler->untrashLocation( 70 );
+    }
+
+    public function testSetSectionForSubtree()
+    {
+        $this->insertDatabaseFixture( __DIR__ . '/../../_fixtures/contentobjects.php' );
+        $handler = $this->getLocationGateway();
+        $handler->setSectionForSubtree( '/1/2/69/70/', 23 );
+
+        $query = $this->handler->createSelectQuery();
+        $this->assertQueryResult(
+            array( array( 68 ), array( 69 ) ),
+            $query
+                ->select( 'id' )
+                ->from( 'ezcontentobject' )
+                ->where( $query->expr->eq( 'section_id', 23 ) )
         );
     }
 }

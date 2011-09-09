@@ -15,7 +15,10 @@ use ezp\Persistence\Content\Type,
     ezp\Persistence\Content\Type\FieldDefinition,
     ezp\Persistence\Content\Type\Group,
     ezp\Persistence\Content\Type\Group\CreateStruct as GroupCreateStruct,
-    ezp\Persistence\Content\Type\Group\UpdateStruct as GroupUpdateStruct;
+    ezp\Persistence\Content\Type\Group\UpdateStruct as GroupUpdateStruct,
+    ezp\Persistence\Storage\Legacy\Content\StorageFieldDefinition,
+    ezp\Persistence\Storage\Legacy\Content\Type\Update\Handler as UpdateHandler,
+    ezp\Persistence\Storage\Legacy\Exception;
 
 /**
  */
@@ -36,15 +39,27 @@ class Handler implements BaseContentTypeHandler
     protected $mapper;
 
     /**
+     * Content Type update handler
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Type\Update\Handler
+     */
+    protected $updateHandler;
+
+    /**
      * Creates a new content type handler.
      *
      * @param \ezp\Persistence\Storage\Legacy\Content\Type\Gateway $contentTypeGateway
-     * @param Mapper $mapper
+     * @param \ezp\Persistence\Storage\Legacy\Content\Type\Mapper $mapper
+     * @param \ezp\Persistence\Storage\Legacy\Content\Type\Update\Handler $updateHandler
      */
-    public function __construct( Gateway $contentTypeGateway, Mapper $mapper )
+    public function __construct(
+        Gateway $contentTypeGateway,
+        Mapper $mapper,
+        UpdateHandler $updateHandler )
     {
         $this->contentTypeGateway = $contentTypeGateway;
         $this->mapper = $mapper;
+        $this->updateHandler = $updateHandler;
     }
 
     /**
@@ -65,31 +80,29 @@ class Handler implements BaseContentTypeHandler
     }
 
     /**
-     * @param \ezp\Persistence\Content\Type\Group\UpdateStruct $group
-     * @return bool
-     * @todo Should we return the Group here? Would require an additional
-     *       SELECT, though.
+     * @param \ezp\Persistence\Content\Type\Group\UpdateStruct $struct
+     * @return \ezp\Persistence\Content\Type\Group
      */
     public function updateGroup( GroupUpdateStruct $struct )
     {
         $this->contentTypeGateway->updateGroup(
             $struct
         );
-        // FIXME: Determine if Group should be returned instead
-        return true;
+        return $this->loadGroup( $struct->id );
     }
 
     /**
      * @param mixed $groupId
-     * @todo Is cascading (Group -> Type -> Content) intended?
+     * @throws \ezp\Persistence\Storage\Legacy\Exception\GroupNotEmpty
+     *         if a non-empty group is to be deleted.
      */
     public function deleteGroup( $groupId )
     {
-        // Load type-status combinations which are not in any other group
-        // Delete group assignement
-        // Delete all types that have no more groups
-        //   Delete all content objects of these types
-        throw new \RuntimeException( "Not implemented, yet." );
+        if ( $this->contentTypeGateway->countTypesInGroup( $groupId ) !== 0 )
+        {
+            throw new Exception\GroupNotEmpty( $groupId );
+        }
+        $this->contentTypeGateway->deleteGroup( $groupId );
     }
 
     /**
@@ -98,7 +111,10 @@ class Handler implements BaseContentTypeHandler
      */
     public function loadGroup( $groupId )
     {
-        throw new \RuntimeException( "Not implemented, yet." );
+        $rows = $this->contentTypeGateway->loadGroupData( $groupId );
+        $groups = $this->mapper->extractGroupsFromRows( $rows );
+
+        return $groups[0];
     }
 
     /**
@@ -106,24 +122,26 @@ class Handler implements BaseContentTypeHandler
      */
     public function loadAllGroups()
     {
-        throw new \RuntimeException( "Not implemented, yet." );
+        $rows = $this->contentTypeGateway->loadAllGroupsData();
+        return $this->mapper->extractGroupsFromRows( $rows );
     }
 
     /**
      * @param mixed $groupId
+     * @param int $status
      * @return Type[]
      */
     public function loadContentTypes( $groupId, $status = 0 )
     {
-        throw new \RuntimeException( "Not implemented, yet." );
+        $rows = $this->contentTypeGateway->loadTypesDataForGroup( $groupId, $status );
+        return $this->mapper->extractTypesFromRows( $rows );
     }
 
     /**
      * @param int $contentTypeId
      * @param int $status
-     * @todo Use constant for $status?
      */
-    public function load( $contentTypeId, $status = 0 )
+    public function load( $contentTypeId, $status = Type::STATUS_DEFINED )
     {
         $rows = $this->contentTypeGateway->loadTypeData(
             $contentTypeId, $status
@@ -137,7 +155,6 @@ class Handler implements BaseContentTypeHandler
     /**
      * @param \ezp\Persistence\Content\Type\CreateStruct $contentType
      * @return Type
-     * @todo Maintain contentclass_name
      */
     public function create( CreateStruct $createStruct )
     {
@@ -159,10 +176,13 @@ class Handler implements BaseContentTypeHandler
         }
         foreach ( $contentType->fieldDefinitions as $fieldDef )
         {
+            $storageFieldDef = new StorageFieldDefinition();
+            $this->mapper->toStorageFieldDefinition( $fieldDef, $storageFieldDef );
             $fieldDef->id = $this->contentTypeGateway->insertFieldDefinition(
                 $contentType->id,
                 $contentType->status,
-                $fieldDef
+                $fieldDef,
+                $storageFieldDef
             );
         }
         return $contentType;
@@ -187,11 +207,18 @@ class Handler implements BaseContentTypeHandler
 
     /**
      * @param mixed $contentTypeId
-     * @todo Needs to delete all content objects of that type, too.
      * @todo Maintain contentclass_name
      */
     public function delete( $contentTypeId, $status )
     {
+        $count = $this->contentTypeGateway->countInstancesOfType(
+            $contentTypeId, $status
+        );
+        if ( $count > 0 )
+        {
+            throw new Exception\TypeStillHasContent( $contentTypeId, $status );
+        }
+
         $this->contentTypeGateway->deleteGroupAssignementsForType(
             $contentTypeId, $status
         );
@@ -251,10 +278,19 @@ class Handler implements BaseContentTypeHandler
      * @param mixed $groupId
      * @param mixed $contentTypeId
      * @param int $status
-     * @todo Check if content type is in another group, otherwise delete?
      */
     public function unlink( $groupId, $contentTypeId, $status )
     {
+        $groupCount = $this->contentTypeGateway->countGroupsForType(
+            $contentTypeId, $status
+        );
+        if ( $groupCount < 2 )
+        {
+            throw new Exception\RemoveLastGroupFromType(
+                $contentTypeId, $status
+            );
+        }
+
         $this->contentTypeGateway->deleteGroupAssignement(
             $groupId, $contentTypeId, $status
         );
@@ -290,8 +326,12 @@ class Handler implements BaseContentTypeHandler
      */
     public function addFieldDefinition( $contentTypeId, $status, FieldDefinition $fieldDefinition )
     {
+        $storageFieldDef = new StorageFieldDefinition();
+        $this->mapper->toStorageFieldDefinition(
+            $fieldDefinition, $storageFieldDef
+        );
         $fieldDefinition->id = $this->contentTypeGateway->insertFieldDefinition(
-            $contentTypeId, $status, $fieldDefinition
+            $contentTypeId, $status, $fieldDefinition, $storageFieldDef
         );
     }
 
@@ -329,15 +369,19 @@ class Handler implements BaseContentTypeHandler
      */
     public function updateFieldDefinition( $contentTypeId, $status, FieldDefinition $fieldDefinition )
     {
+        $storageFieldDef = new StorageFieldDefinition();
+        $this->mapper->toStorageFieldDefinition(
+            $fieldDefinition, $storageFieldDef
+        );
         $this->contentTypeGateway->updateFieldDefinition(
-            $contentTypeId, $status, $fieldDefinition
+            $contentTypeId, $status, $fieldDefinition, $storageFieldDef
         );
     }
 
     /**
      * Update content objects
      *
-     * Updates content objects, depending on the changed field definition.
+     * Updates content objects, depending on the changed field definitions.
      *
      * A content type has a state which tells if its content objects yet have
      * been adapted.
@@ -346,12 +390,12 @@ class Handler implements BaseContentTypeHandler
      *
      * @param mixed $contentTypeId
      * @return void
-     * @todo Is it correct that this refers to a $fieldDefinitionId instead of
-     *       a $typeId?
      */
-    public function updateContentObjects( $contentTypeId, $status, $fieldDefinitionId )
+    public function publish( $contentTypeId )
     {
-        throw new \RuntimeException( "Not implemented, yet." );
+        $fromType = $this->load( $contentTypeId, 0 );
+        $toType   = $this->load( $contentTypeId, 1 );
+        $this->updateHandler->performUpdate( $fromType, $toType );
     }
 }
 ?>

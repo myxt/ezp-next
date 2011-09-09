@@ -10,6 +10,11 @@
 namespace ezp\Persistence\Storage\Legacy\Tests\Content\Type;
 use ezp\Persistence\Storage\Legacy\Tests\TestCase,
     ezp\Persistence\Storage\Legacy\Content\Type\Mapper,
+    ezp\Persistence\Storage\Legacy\Content\StorageFieldDefinition,
+    ezp\Persistence\Storage\Legacy\Content\FieldValue\Converter,
+
+    // Needed for $sortOrder and $sortField properties
+    ezp\Persistence\Content\Location,
 
     ezp\Persistence\Content\Type,
     ezp\Persistence\Content\Type\CreateStruct,
@@ -31,7 +36,7 @@ class MapperTest extends TestCase
     {
         $createStruct = $this->getGroupCreateStructFixture();
 
-        $mapper = new Mapper();
+        $mapper = new Mapper( $this->getConverterRegistryMock() );
 
         $group = $mapper->createGroupFromCreateStruct( $createStruct );
 
@@ -91,7 +96,7 @@ class MapperTest extends TestCase
     {
         $struct = $this->getContenTypeCreateStructFixture();
 
-        $mapper = new Mapper();
+        $mapper = new Mapper( $this->getConverterRegistryMock() );
         $type = $mapper->createTypeFromCreateStruct( $struct );
 
         foreach ( $struct as $propName => $propVal )
@@ -132,6 +137,10 @@ class MapperTest extends TestCase
         $struct->nameSchema = '<short_name|name>';
         $struct->isContainer = true;
         $struct->initialLanguageId = 2;
+        $struct->sortField = Location::SORT_FIELD_MODIFIED_SUBNODE;
+        $struct->sortOrder = Location::SORT_ORDER_ASC;
+        $struct->defaultAlwaysAvailable = true;
+
         $struct->groupIds = array(
             1,
         );
@@ -156,7 +165,7 @@ class MapperTest extends TestCase
     {
         $type = $this->getContenTypeFixture();
 
-        $mapper = new Mapper();
+        $mapper = new Mapper( $this->getConverterRegistryMock() );
         $struct = $mapper->createCreateStructFromType( $type );
 
         // Iterate through struct, since it has fewer props
@@ -199,6 +208,9 @@ class MapperTest extends TestCase
         $type->nameSchema = '<short_name|name>';
         $type->isContainer = true;
         $type->initialLanguageId = 2;
+        $type->sortField = Location::SORT_FIELD_MODIFIED_SUBNODE;
+        $type->sortOrder = Location::SORT_ORDER_ASC;
+        $type->defaultAlwaysAvailable = true;
         $type->groupIds = array(
             1,
         );
@@ -219,15 +231,41 @@ class MapperTest extends TestCase
 
     /**
      * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Mapper::extractGroupsFromRows
+     */
+    public function testExtractGroupsFromRows()
+    {
+        $rows = $this->getLoadGroupFixture();
+
+        $mapper = new Mapper( $this->getConverterRegistryMock() );
+        $groups = $mapper->extractGroupsFromRows( $rows );
+
+        $groupFixture = new Group();
+        $groupFixture->created = 1032009743;
+        $groupFixture->creatorId = 14;
+        $groupFixture->id = 3;
+        $groupFixture->modified = 1033922120;
+        $groupFixture->modifierId = 14;
+        $groupFixture->identifier = 'Media';
+
+        $this->assertEquals(
+            array( $groupFixture ),
+            $groups
+        );
+    }
+
+    /**
+     * @return void
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Mapper::extractTypesFromRows
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Mapper::extractTypeFromRow
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Mapper::extractStorageFieldFromRow
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Mapper::extractFieldFromRow
      */
     public function testExtractTypesFromRowsSingle()
     {
         $rows = $this->getLoadTypeFixture();
 
-        $mapper = new Mapper();
+        $mapper = $this->getNonConvertingMapper();
         $types = $mapper->extractTypesFromRows( $rows );
 
         $this->assertEquals(
@@ -237,16 +275,15 @@ class MapperTest extends TestCase
         );
 
         $this->assertPropertiesCorrect(
-            // "random" sample
             array(
                 'id' => 1,
                 'status' => 0,
                 'name' => array(
                     'always-available' => 'eng-US',
-                    'eng-US'           => 'Folder'
+                    'eng-US' => 'Folder'
                 ),
                 'description' => array(
-                    0                  => '',
+                    0 => '',
                     'always-available' => false,
                 ),
                 'created' => 1024392098,
@@ -260,26 +297,147 @@ class MapperTest extends TestCase
                 'isContainer' => true,
                 'initialLanguageId' => 2,
                 'groupIds' => array( 1 ),
+                'sortField' => 1,
+                'sortOrder' => 1,
+                'defaultAlwaysAvailable' => true,
             ),
             $types[0]
         );
 
-        // "random" sample
         $this->assertEquals(
             5,
             count( $types[0]->fieldDefinitions ),
             'Incorrect number of field definitions'
         );
         $this->assertPropertiesCorrect(
-            // "random" sample
             array(
                 'id' => 155,
-                'fieldType' => 'ezstring',
+                'name' => array(
+                    'always-available' => 'eng-US',
+                    'eng-US' => 'Short name',
+                ),
+                'description' => array(
+                    0 => '',
+                    'always-available' => false,
+                ),
                 'identifier' => 'short_name',
-                'isInfoCollector' => false,
+                'fieldGroup' => '',
+                'fieldType' => 'ezstring',
+                'isTranslatable' => true,
                 'isRequired' => false,
+                'isInfoCollector' => false,
+                'isSearchable' => true,
+                'position' => 2,
             ),
             $types[0]->fieldDefinitions[2]
+        );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Mapper::toStorageFieldDefinition
+     */
+    public function testToStorageFieldDefinition()
+    {
+        $converterMock = $this->getMockForAbstractClass(
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter'
+        );
+        $converterMock->expects( $this->once() )
+            ->method( 'toStorageFieldDefinition' )
+            ->with(
+                $this->isInstanceOf(
+                    'ezp\\Persistence\\Content\\Type\\FieldDefinition'
+                ),
+                $this->isInstanceOf(
+                    'ezp\\Persistence\\Storage\\Legacy\\Content\\StorageFieldDefinition'
+                )
+            );
+
+        $converterRegistry = new Converter\Registry();
+        $converterRegistry->register( 'some_type', $converterMock );
+
+        $mapper = new Mapper( $converterRegistry );
+
+        $fieldDef = new FieldDefinition();
+        $fieldDef->fieldType = 'some_type';
+
+        $storageFieldDef = new StorageFieldDefinition();
+
+        $mapper->toStorageFieldDefinition( $fieldDef, $storageFieldDef );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Mapper::toFieldDefinition
+     */
+    public function testToFieldDefinition()
+    {
+        $converterMock = $this->getMockForAbstractClass(
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter'
+        );
+        $converterMock->expects( $this->once() )
+            ->method( 'toFieldDefinition' )
+            ->with(
+                $this->isInstanceOf(
+                    'ezp\\Persistence\\Storage\\Legacy\\Content\\StorageFieldDefinition'
+                ),
+                $this->isInstanceOf(
+                    'ezp\\Persistence\\Content\\Type\\FieldDefinition'
+                )
+            );
+
+        $converterRegistry = new Converter\Registry();
+        $converterRegistry->register( 'some_type', $converterMock );
+
+        $mapper = new Mapper( $converterRegistry );
+
+        $storageFieldDef = new StorageFieldDefinition();
+
+        $fieldDef = new FieldDefinition();
+        $fieldDef->fieldType = 'some_type';
+
+        $mapper->toFieldDefinition( $storageFieldDef, $fieldDef );
+    }
+
+    /**
+     * Returns a Mapper with conversion methods mocked
+     *
+     * @return Mapper
+     */
+    protected function getNonConvertingMapper()
+    {
+        $mapper = $this->getMock(
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\Type\\Mapper',
+            array( 'toFieldDefinition' ),
+            array( $this->getConverterRegistryMock() )
+        );
+        // Dedicatedly tested test
+        $mapper->expects( $this->atLeastOnce() )
+            ->method( 'toFieldDefinition' )
+            ->with(
+                $this->isInstanceOf(
+                    'ezp\\Persistence\\Storage\\Legacy\\Content\\StorageFieldDefinition'
+                )
+            )->will(
+                $this->returnCallback(
+                    function ()
+                    {
+                        return new FieldDefinition();
+                    }
+                )
+            );
+        return $mapper;
+    }
+
+    /**
+     * Returns a converter registry mock
+     *
+     * @return ezp\Persistence\Storage\Legacy\Content\FieldValue\Converter\Registry
+     */
+    protected function getConverterRegistryMock()
+    {
+        return $this->getMock(
+            'ezp\\Persistence\\Storage\\Legacy\\Content\\FieldValue\\Converter\\Registry'
         );
     }
 
@@ -291,5 +449,15 @@ class MapperTest extends TestCase
     protected function getLoadTypeFixture()
     {
         return require __DIR__ . '/_fixtures/map_load_type.php';
+    }
+
+    /**
+     * Returns fixture for {@link testExtractGroupsFromRows()}
+     *
+     * @return array
+     */
+    protected function getLoadGroupFixture()
+    {
+        return require __DIR__ . '/_fixtures/map_load_group.php';
     }
 }

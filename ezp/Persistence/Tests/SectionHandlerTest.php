@@ -53,7 +53,7 @@ class SectionHandlerTest extends HandlerTest
     /**
      * Test load function
      *
-     * @covers ezp\Persistence\Tests\InMemoryEngine\SectionHandler::load
+     * @covers ezp\Persistence\Storage\InMemory\SectionHandler::load
      */
     public function testLoad()
     {
@@ -66,13 +66,13 @@ class SectionHandlerTest extends HandlerTest
     /**
      * Test create function
      *
-     * @covers ezp\Persistence\Tests\InMemoryEngine\SectionHandler::create
+     * @covers ezp\Persistence\Storage\InMemory\SectionHandler::create
      */
     public function testCreate()
     {
         $section = $this->repositoryHandler->sectionHandler()->create( 'Test2', 'test2' );
         $this->assertTrue( $section instanceof Section );
-        $this->assertEquals( 3, $section->id );
+        $this->assertEquals( $this->section->id +1, $section->id );
         $this->assertEquals( 'Test2', $section->name );
         $this->assertEquals( 'test2', $section->identifier );
     }
@@ -80,16 +80,16 @@ class SectionHandlerTest extends HandlerTest
     /**
      * Test update function
      *
-     * @covers ezp\Persistence\Tests\InMemoryEngine\SectionHandler::update
+     * @covers ezp\Persistence\Storage\InMemory\SectionHandler::update
      */
     public function testUpdate()
     {
         $sectionHandler = $this->repositoryHandler->sectionHandler();
 
-        $this->assertTrue( $sectionHandler->update( $this->section->id, 'Change', 'change' ) );
+        $sectionHandler->update( $this->section->id, 'Change', 'change' );
 
         $section = $sectionHandler->load( $this->section->id );
-        $this->assertEquals( 2, $section->id );
+        $this->assertEquals( $this->section->id, $section->id );
         $this->assertEquals( 'Change', $section->name );
         $this->assertEquals( 'change', $section->identifier );
     }
@@ -97,7 +97,7 @@ class SectionHandlerTest extends HandlerTest
     /**
      * Test delete function
      *
-     * @covers ezp\Persistence\Tests\InMemoryEngine\SectionHandler::delete
+     * @covers ezp\Persistence\Storage\InMemory\SectionHandler::delete
      */
     public function testDelete()
     {

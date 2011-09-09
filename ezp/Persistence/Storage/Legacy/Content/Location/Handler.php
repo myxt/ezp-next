@@ -13,7 +13,8 @@ use ezp\Persistence\Content\Location,
     ezp\Persistence\Content\Location\UpdateStruct,
     ezp\Persistence\Content\Location\Handler as BaseLocationHandler,
     ezp\Persistence\Storage\Legacy\Content\Handler as ContentHandler,
-    ezp\Persistence\Storage\Legacy\Content\Location\Gateway as LocationGateway;
+    ezp\Persistence\Storage\Legacy\Content\Location\Gateway as LocationGateway,
+    ezp\Persistence\Storage\Legacy\Content\Location\Mapper as LocationMapper;
 
 /**
  * The Location Handler interface defines operations on Location elements in the storage engine.
@@ -28,14 +29,22 @@ class Handler implements BaseLocationHandler
     protected $locationGateway;
 
     /**
+     * Location mapper
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Location\Mapper $mapper
+     */
+    protected $mapper;
+
+    /**
      * Construct from userGateway
      *
      * @param \ezp\Persistence\Storage\Legacy\Content\Location\Gateway $locationGateway
      * @return void
      */
-    public function __construct( LocationGateway $locationGateway )
+    public function __construct( LocationGateway $locationGateway, LocationMapper $mapper )
     {
         $this->locationGateway = $locationGateway;
+        $this->mapper = $mapper;
     }
 
     /**
@@ -58,24 +67,7 @@ class Handler implements BaseLocationHandler
     public function load( $locationId )
     {
         $data = $this->locationGateway->getBasicNodeData( $locationId );
-        $location = new Location();
-
-        $location->id = $data['node_id'];
-        $location->priority = $data['priority'];
-        $location->hidden = $data['is_hidden'];
-        $location->invisible = $data['is_invisible'];
-        $location->remoteId = $data['remote_id'];
-        $location->contentId = $data['contentobject_id'];
-        $location->parentId = $data['parent_node_id'];
-        $location->pathIdentificationString = $data['path_identification_string'];
-        $location->pathString = $data['path_string'];
-        $location->modifiedSubLocation = $data['modified_subnode'];
-        $location->mainLocationId = $data['main_node_id'];
-        $location->depth = $data['depth'];
-        $location->sortField = $data['sort_field'];
-        $location->sortOrder = $data['sort_order'];
-
-        return $location;
+        return $this->mapper->createLocationFromRow( $data );
     }
 
     /**
@@ -92,7 +84,7 @@ class Handler implements BaseLocationHandler
      */
     public function copySubtree( $sourceId, $destinationParentId )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        throw new \RuntimeException( '@TODO: Implement' );
     }
 
     /**
@@ -133,7 +125,7 @@ class Handler implements BaseLocationHandler
      */
     public function markSubtreeModified( $locationId, $timeStamp = null )
     {
-        $nodeData  = $this->locationGateway->getBasicNodeData( $locationId );
+        $nodeData = $this->locationGateway->getBasicNodeData( $locationId );
         $timeStamp = $timeStamp ?: time();
         $this->locationGateway->updateSubtreeModificationTime( $nodeData['path_string'], $timeStamp );
     }
@@ -185,9 +177,9 @@ class Handler implements BaseLocationHandler
      * @param int $locationId
      * @return boolean
      */
-    public function updateLocation( UpdateStruct $location, $locationId )
+    public function update( UpdateStruct $location, $locationId )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->locationGateway->update( $location, $locationId );
     }
 
     /**
@@ -196,10 +188,10 @@ class Handler implements BaseLocationHandler
      * @param \ezp\Persistence\Content\Location\CreateStruct $contentId
      * @return \ezp\Persistence\Content\Location
      */
-    public function createLocation( CreateStruct $locationStruct )
+    public function create( CreateStruct $locationStruct )
     {
         $parentNodeData = $this->locationGateway->getBasicNodeData( $locationStruct->parentId );
-        $this->locationGateway->createLocation( $locationStruct, $parentNodeData );
+        return $this->locationGateway->create( $locationStruct, $parentNodeData );
     }
 
     /**
@@ -216,7 +208,7 @@ class Handler implements BaseLocationHandler
      */
     public function removeSubtree( $locationId )
     {
-        throw new RuntimeException( '@TODO: Implement' );
+        throw new \RuntimeException( '@TODO: Implement' );
     }
 
     /**
@@ -249,7 +241,7 @@ class Handler implements BaseLocationHandler
      */
     public function untrashLocation( $locationId, $newParentId = null )
     {
-        throw new \RuntimeException( '@TODO: Discussion pending…' );
+        $this->locationGateway->untrashLocation( $locationId, $newParentId );
     }
 
     /**
@@ -261,17 +253,9 @@ class Handler implements BaseLocationHandler
      */
     public function setSectionForSubtree( $locationId, $sectionId )
     {
-        throw new RuntimeException( '@TODO: Implement' );
-    }
+        $nodeData = $this->locationGateway->getBasicNodeData( $locationId );
 
-    /**
-     * Removes a location from its $locationId
-     *
-     * @param mixed $locationId
-     */
-    public function delete( $locationId )
-    {
-        throw new RuntimeException( '@TODO: Implement' );
+        $this->locationGateway->setSectionForSubtree( $nodeData['path_string'], $sectionId );
     }
 }
 ?>

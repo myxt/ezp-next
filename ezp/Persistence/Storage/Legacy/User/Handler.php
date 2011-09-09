@@ -13,7 +13,8 @@ use ezp\Persistence\User,
     ezp\Persistence\User\Role,
     ezp\Persistence\User\RoleUpdateStruct,
     ezp\Persistence\User\Policy,
-    ezp\Persistence\Storage\Legacy\User\Role\Gateway as RoleGateway;
+    ezp\Persistence\Storage\Legacy\User\Role\Gateway as RoleGateway,
+    \RuntimeException;
 
 /**
  * Storage Engine handler for user module
@@ -54,11 +55,34 @@ class Handler implements BaseUserHandler
      * The User struct used to create the user will contain an ID which is used
      * to reference the user.
      *
-     * @param User $user
+     * @param \ezp\Persistence\User $user
+     * @return \ezp\Persistence\User
      */
-    public function createUser( User $user )
+    public function create( User $user )
     {
         $this->userGateway->createUser( $user );
+        return $user;
+    }
+
+    /**
+     * Load user with user ID.
+     *
+     * @param mixed $userId
+     * @return \ezp\Persistence\User
+     */
+    public function load( $userId )
+    {
+        throw new RuntimeException( '@TODO: Implement' );
+    }
+
+    /**
+     * Update the user information specified by the user struct
+     *
+     * @param \ezp\Persistence\User $user
+     */
+    public function update( User $user )
+    {
+        $this->userGateway->updateUser( $user );
     }
 
     /**
@@ -66,26 +90,16 @@ class Handler implements BaseUserHandler
      *
      * @param mixed $userId
      */
-    public function deleteUser( $userId )
+    public function delete( $userId )
     {
         $this->userGateway->deleteUser( $userId );
     }
 
     /**
-     * Update the user information specified by the user struct
-     *
-     * @param User $user
-     */
-    public function updateUser( User $user )
-    {
-        $this->userGateway->updateUser( $user );
-    }
-
-    /**
      * Create new role
      *
-     * @param Role $role
-     * @return Role
+     * @param \ezp\Persistence\User\Role $role
+     * @return \ezp\Persistence\User\Role
      */
     public function createRole( Role $role )
     {
@@ -100,9 +114,32 @@ class Handler implements BaseUserHandler
     }
 
     /**
+     * Load a specified role by id
+     *
+     * @param mixed $roleId
+     * @return \ezp\Persistence\User\Role
+     * @throws \ezp\Base\Exception\NotFound If role is not found
+     */
+    public function loadRole( $roleId )
+    {
+        throw new RuntimeException( '@TODO: Implement' );
+    }
+
+    /**
+     * Load roles assigned to a user/group (not including inherited roles)
+     *
+     * @param mixed $groupId
+     * @return \ezp\Persistence\User\Role[]
+     */
+    public function loadRolesByGroupId( $groupId )
+    {
+        throw new RuntimeException( '@TODO: Implement' );
+    }
+
+    /**
      * Update role
      *
-     * @param RoleUpdateStruct $role
+     * @param \ezp\Persistence\User\RoleUpdateStruct $role
      */
     public function updateRole( RoleUpdateStruct $role )
     {
@@ -123,14 +160,26 @@ class Handler implements BaseUserHandler
      * Adds a policy to a role
      *
      * @param mixed $roleId
-     * @param Policy $policy
-     * @return void
+     * @param \ezp\Persistence\User\Policy $policy
+     * @return \ezp\Persistence\User\Policy
      */
     public function addPolicy( $roleId, Policy $policy )
     {
         $this->roleGateway->addPolicy( $roleId, $policy );
 
         return $policy;
+    }
+
+    /**
+     * Update a policy
+     *
+     * Replaces limitations values with new values.
+     *
+     * @param \ezp\Persistence\User\Policy $policy
+     */
+    public function updatePolicy( Policy $policy )
+    {
+        throw new RuntimeException( '@TODO: Implement' );
     }
 
     /**
@@ -146,19 +195,19 @@ class Handler implements BaseUserHandler
     }
 
     /**
-     * Returns the user policies associated with the user
+     * Returns the user policies associated with the user (including inherited policies from user groups)
      *
      * @param mixed $userId
-     * @return UserPolicy[]
+     * @return \ezp\Persistence\User\Policy[]
      */
-    public function getPermissions( $userId )
+    public function loadPoliciesByUserId( $userId )
     {
         // @TODO: Specification of how this works is pending by eZ.
         throw new RuntimeException( '@TODO: Implement' );
     }
 
     /**
-     * Assign role to user with given limitation
+     * Assign role to user group with given limitation
      *
      * The limitation array may look like:
      * <code>
@@ -175,23 +224,25 @@ class Handler implements BaseUserHandler
      * Where the keys are the limitation identifiers, and the respective values
      * are an array of limitation values. The limitation parameter is optional.
      *
-     * @param mixed $userId
+     * @param mixed $groupId
      * @param mixed $roleId
      * @param array $limitation
      */
-    public function assignRole( $userId, $roleId, array $limitation = null )
+    public function assignRole( $groupId, $roleId, array $limitation = null )
     {
         $limitation = $limitation ?: array( '' => array( '' ) );
-        $this->userGateway->assignRole( $userId, $roleId, $limitation );
+        $this->userGateway->assignRole( $groupId, $roleId, $limitation );
     }
 
     /**
-     * @param mixed $userId
+     * Un-assign a role
+     *
+     * @param mixed $groupId The group / user Id to un-assign a role from
      * @param mixed $roleId
      */
-    public function removeRole( $userId, $roleId )
+    public function unAssignRole( $groupId, $roleId )
     {
-        $this->userGateway->removeRole( $userId, $roleId );
+        $this->userGateway->removeRole( $groupId, $roleId );
     }
 }
 ?>

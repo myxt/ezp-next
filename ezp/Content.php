@@ -9,14 +9,15 @@
 
 namespace ezp;
 use ezp\Base\Model,
-    ezp\Base\Observable,
+    ezp\Base\ModelDefinition,
     ezp\Base\Collection\Type as TypeCollection,
     ezp\Content\Translation,
     ezp\Content\Type,
     ezp\Content\Location,
     ezp\Content\Section,
-    ezp\Content\Proxy,
+    ezp\Base\Proxy,
     ezp\Content\Version,
+    ezp\Content\Version\StaticCollection as VersionCollection,
     ezp\Persistence\Content as ContentValue,
     DateTime,
     InvalidArgumentException;
@@ -26,19 +27,24 @@ use ezp\Base\Model,
  *
  * It is used for both input and output manipulation.
  *
- * @property-read int $id The Content's ID, automatically assigned by the persistence layer
+ * @property-read mixed $id The Content's ID, automatically assigned by the persistence layer
  * @property-read int $currentVersionNo The Content's current version
- * @property-read string $remoteId The Content's remote identifier (custom identifier for the object)
+ * @property-read int $status The Content's status, as one of the ezp\Content::STATUS_* constants
  * @property string[] $name The Content's name
+ * @property-read mixed $ownerId Id of the user object that owns the content
  * @property-read bool $alwaysAvailable The Content's always available flag
- * @property-read int status The Content's status, as one of the ezp\Content::STATUS_* constants
- * @property-read \ezp\Content\Type contentType The Content's type
+ * @property-read string $remoteId The Content's remote identifier (custom identifier for the object)
+ * @property-read mixed $sectionId Read property for section id, use with object $section to change
+ * @property-read mixed $typeId Read property for type id
+ * @property-read \ezp\Content\Type $contentType The Content's type
  * @property-read \ezp\Content\Version[] $versions
  *                Iterable collection of versions for content. Array-accessible :;
  *                <code>
  *                $myFirstVersion = $content->versions[1];
  *                $myThirdVersion = $content->versions[3];
  *                </code>
+ * @property-read \ezp\Content\Version $currentVersion Current version of content
+ * @property-read \ezp\Content\Location $mainLocation
  * @property-read \ezp\Content\Location[] $locations
  *                Locations for content. Iterable, countable and Array-accessible (with numeric indexes)
  *                First location referenced in the collection represents the main location for content
@@ -48,9 +54,9 @@ use ezp\Base\Model,
  *                $locationById = $content->locations->byId( 60 );
  *                </code>
  * @property-read DateTime $creationDate The date the object was created
- * @property-read \ezp\Content\Section $section The Section the content belongs to
- * @property \ezp\Content[] $relations Collection of ezp\Content objects, related to the current one
- * @property \ezp\Content[] $reverseRelations Collection of ezp\Content objects, reverse-related to the current one
+ * @property \ezp\Content\Section $section The Section the content belongs to
+ * @property \ezp\Content\Relation[] $relations Collection of \ezp\Content\Relation objects, related to the current one
+ * @property \ezp\Content\Relation[] $reverseRelations Collection of \ezp\Content\Relation objects, reverse-related to the current one
  * @property \ezp\Content\Translation[] $translations
  *           Collection of content's translations, indexed by locale (ie. eng-GB)
  *           <code>
@@ -65,7 +71,7 @@ use ezp\Base\Model,
  *           </code>
  * @property int $ownerId Owner identifier
  */
-class Content extends Model
+class Content extends Model implements ModelDefinition
 {
     /**
      * Publication status constants
@@ -83,14 +89,11 @@ class Content extends Model
         'currentVersionNo' => false,
         'status' => false,
         'name' => true, // @todo: Make readOnly and generate on store event from attributes based on type nameScheme
-        'ownerId' => true,
-        'relations' => false,
-        'reversedRelations' => false,
-        'translations' => true,
-        'locations' => true,
+        'ownerId' => true,// @todo make read only by providing interface that takes User as input
         'alwaysAvailable' => true,
-        'remoteId' => true,
+        'remoteId' => true,// @todo Make readonly and deal with this internally (in all DO's)
         'sectionId' => false,
+        'typeId' => false,
     );
 
     /**
@@ -100,9 +103,15 @@ class Content extends Model
         'creationDate' => false,
         'mainLocation' => false,
         'section' => false,
+        'owner' => false,
         'fields' => true,
         'contentType' => false,
         'versions' => false,
+        'locations' => true,
+        //'translations' => true,
+        'relations' => false,
+        'reversedRelations' => false,
+        'currentVersion' => false
     );
 
     /**
@@ -111,14 +120,6 @@ class Content extends Model
      * @var \ezp\Content\Section
      */
     protected $section;
-
-    /**
-     * The Content's status, as one of the ezp\Content::STATUS_* constants
-     * @todo Move to VO!
-     *
-     * @var int
-     */
-    protected $status = self::STATUS_DRAFT;
 
     /**
      * Locations collection
@@ -137,14 +138,14 @@ class Content extends Model
     /**
      * Relations collection
      *
-     * @var \ezp\Content[]
+     * @var \ezp\Content\Relation[]
      */
     protected $relations;
 
     /**
      * Reverse relation collection
      *
-     * @var \ezp\Content[]
+     * @var \ezp\Content\Relation[]
      */
     protected $reversedRelations;
 
@@ -156,21 +157,236 @@ class Content extends Model
     protected $versions;
 
     /**
+     * Owner ( User )
+     *
+     * @var \ezp\User
+     */
+    protected $owner;
+
+    /**
      * Create content based on content type object
      *
      * @param \ezp\Content\Type $contentType
+     * @param \ezp\User $owner
      */
-    public function __construct( Type $contentType )
+    public function __construct( Type $contentType, User $owner )
     {
-        $this->properties = new ContentValue( array( 'typeId' => $contentType->id ) );
+        $this->properties = new ContentValue( array(
+            'typeId' => $contentType->id,
+            'status' => self::STATUS_DRAFT,
+            'ownerId' => $owner->id
+        ) );
         /*
         @TODO Make sure all dynamic properties writes to value object if scalar value (creationDate (int)-> properties->created )
         */
         $this->contentType = $contentType;
+        $this->owner = $owner;
         $this->locations = new TypeCollection( 'ezp\\Content\\Location' );
-        $this->relations = new TypeCollection( 'ezp\\Content' );
-        $this->reversedRelations = new TypeCollection( 'ezp\\Content' );
-        $this->versions = new TypeCollection( 'ezp\\Content\\Version', array( new Version( $this ) ) );
+        $this->relations = new TypeCollection( 'ezp\\Content\\Relation' );
+        $this->reversedRelations = new TypeCollection( 'ezp\\Content\\Relation' );
+        $this->versions = new VersionCollection( array( new Version( $this ) ) );
+    }
+
+    /**
+     * Returns definition of the content object, atm: permissions
+     *
+     * @access private
+     * @return array
+     */
+    public static function definition()
+    {
+        $def = array(
+            'module' => 'content',
+            'functions' => array(
+                // Note: Functions skipped in api: bookmark, dashboard, tipafriend and pdf
+                // @todo Add StateLimitations on functions that need them when object states exists in public api
+                'create' => array(
+                    // Note: Limitations 'Class' & 'Section' is copied from 'read' function further bellow
+                    'ParentOwner' => array(
+                        'compare' => function( Content $content, array $limitationsValues, Repository $repository, Location $parent = null )
+                        {
+                            return $parent && in_array( $parent->content->ownerId, $limitationsValues, true );
+                        },
+                    ),
+                    'ParentGroup' => array(
+                        'compare' => function( Content $content, array $limitationsValues, Repository $repository, Location $parent = null )
+                        {
+                            if ( !$parent )
+                                return false;
+
+                            foreach ( $parent->content->owner->getGroups() as $group )
+                            {
+                                if ( in_array( $group->id, $limitationsValues, true ) )
+                                    return true;
+                            }
+
+                            return false;
+                        },
+                    ),
+                    'ParentClass' => array(
+                        'compare' => function( Content $content, array $limitationsValues, Repository $repository, Location $parent = null )
+                        {
+                            return $parent && in_array( $parent->content->typeId, $limitationsValues, true );
+                        },
+                    ),
+                    'ParentDepth' => array(
+                        'compare' => function( Content $content, array $limitationsValues, Repository $repository, Location $parent = null )
+                        {
+                            return $parent && in_array( $parent->depth, $limitationsValues, true );
+                        },
+                    ),
+                    'Node' => array(
+                        'compare' => function( Content $content, array $limitationsValues, Repository $repository, Location $parent = null )
+                        {
+                            return $parent && in_array( $parent->id, $limitationsValues, true );
+                        },
+                    ),
+                    'Subtree' => array(
+                        'compare' => function( Content $content, array $limitationsValues, Repository $repository, Location $parent = null )
+                        {
+                            if ( !$parent )
+                                return false;
+
+                            foreach ( $limitationsValues as $limitationPathString )
+                            {
+                                if ( strpos( $parent->pathString, $limitationPathString ) === 0 )
+                                    return true;
+                            }
+
+                            return false;
+                        },
+                    ),
+                    'Language' => array(
+                        'compare' => function( Content $content, array $limitationsValues )
+                        {
+                            // Note: Copied to other functions further down
+                            // @todo: $limitationsValues is a list of languageCodes, so it needs to be matched against
+                            //        language of content somehow when that api is in place
+                            return false;
+                        },
+                    ),
+                ),
+                'read' => array(
+                    // Note: All limitations copied to other functions further bellow
+                    'Class' => array(
+                        'compare' => function( Content $content, array $limitationsValues )
+                        {
+                            return in_array( $content->typeId, $limitationsValues, true );
+                        },
+                    ),
+                    'Section' => array(
+                        'compare' => function( Content $content, array $limitationsValues )
+                        {
+                            return in_array( $content->sectionId, $limitationsValues, true );
+                        },
+                    ),
+                    'Owner' => array(
+                        'compare' => function( Content $content, array $limitationsValues )
+                        {
+                            return in_array( $content->ownerId, $limitationsValues, true );
+                        },
+                    ),
+                    'Group' => array(
+                        'compare' => function( Content $content, array $limitationsValues )
+                        {
+                            foreach ( $content->owner->getGroups() as $group )
+                            {
+                                if ( in_array( $group->id, $limitationsValues, true ) )
+                                    return true;
+                            }
+
+                            return false;
+                        },
+                    ),
+                    'Node' => array(
+                        'compare' => function( Content $content, array $limitationsValues )
+                        {
+                            foreach ( $content->locations as $location )
+                            {
+                                if ( in_array( $location->id, $limitationsValues, true ) )
+                                    return true;
+                            }
+
+                            return false;
+                        },
+                    ),
+                    'Subtree' => array(
+                        'compare' => function( Content $content, array $limitationsValues )
+                        {
+                            foreach ( $content->locations as $location )
+                            {
+                                foreach ( $limitationsValues as $limitationPathString )
+                                {
+                                    if ( strpos( $location->pathString, $limitationPathString ) === 0 )
+                                        return true;
+                                }
+                            }
+
+                            return false;
+                        },
+                    ),
+                ),
+                'edit' => array(
+                    // Note: Limitations copied over from 'read' + 'Language' from 'create'
+                ),
+                'remove' => array(
+                    // Note: Limitations copied over from 'read', getting 'Group' as a bonus further down
+                ),
+                'move' => array(),
+                'versionread' => array(
+                    // Note: Limitations copied over from 'read', getting 'Group' as a bonus further down
+                ),
+                'versionremove' => array(
+                    // Note: Limitations copied over from 'read', getting 'Group' as a bonus further down
+                ),
+                'view_embed' => array(
+                    // Note: Limitations copied over from 'read', getting 'Group' as a bonus further down
+                ),
+                'diff' => array(
+                    // Note: Limitations copied over from 'read', getting 'Group' as a bonus further down
+                ),
+                'reverserelatedlist' => array(),
+                'translate' => array(
+                    // Note: Limitations copied over from 'read', getting 'Group' as a bonus further down
+                    // 'Language' is copied from 'create'
+                ),
+                'urltranslator' => array(),
+                'pendinglist' => array(),
+                'manage_locations' => array(
+                    // Note: Limitations copied over from 'read', getting 'Group' as a bonus further down
+                ),
+                'hide' => array(
+                    // Note: Limitations copied over from 'read' further down
+                    // 'Language' is copied from 'create'
+                ),
+                'restore' => array(),
+                'cleantrash' => array(),
+            ),
+        );
+
+        //// Limitations are copied to reduce duplication (never copied to 'read' as it requires 'query' support)
+
+        // Create: Copy 'Class' & 'Section' from 'read'
+        $def['functions']['create']['Class'] = $def['functions']['read']['Class'];
+        $def['functions']['create']['Class'] = $def['functions']['read']['Class'];
+
+        // Edit: Copy 'Language' from 'creat'
+        $def['functions']['edit']['Language'] = $def['functions']['create']['Language'];
+        $def['functions']['translate']['Language'] = $def['functions']['create']['Language'];
+        $def['functions']['hide']['Language'] = $def['functions']['create']['Language'];
+
+        // Union duplicate code from 'read'
+        $def['functions']['edit'] = $def['functions']['edit'] + $def['functions']['read'];
+        $def['functions']['remove'] = $def['functions']['remove'] + $def['functions']['read'];
+        $def['functions']['versionread'] = $def['functions']['versionread'] + $def['functions']['read'];
+        $def['functions']['versionremove'] = $def['functions']['versionremove'] + $def['functions']['read'];
+        $def['functions']['view_embed'] = $def['functions']['view_embed'] + $def['functions']['read'];
+        $def['functions']['diff'] = $def['functions']['diff'] + $def['functions']['read'];
+        $def['functions']['translate'] = $def['functions']['translate'] + $def['functions']['read'];
+        $def['functions']['manage_locations'] = $def['functions']['manage_locations'] + $def['functions']['read'];
+        $def['functions']['hide'] = $def['functions']['hide'] + $def['functions']['read'];
+
+        return $def;
     }
 
     /**
@@ -224,6 +440,7 @@ class Content extends Model
 
     /**
      * Get fields of current version
+     * @todo Do we really want/need this shortcut?
      *
      * @return \ezp\Content\Field[]
      */
@@ -258,6 +475,20 @@ class Content extends Model
     }
 
     /**
+     * Returns the User the Content is owned by
+     *
+     * @return \ezp\User
+     */
+    protected function getOwner()
+    {
+        if ( $this->owner instanceof Proxy )
+        {
+            $this->owner = $this->owner->load();
+        }
+        return $this->owner;
+    }
+
+    /**
      * Adds a new location to content under an existing one.
      *
      * @param \ezp\Content\Location $parentLocation
@@ -271,12 +502,44 @@ class Content extends Model
     }
 
     /**
+     * Gets locations
+     *
+     * @return \ezp\Content\Location[]
+     */
+    protected function getLocations()
+    {
+        return $this->locations;
+    }
+
+    /**
+     * Gets Content relations
+     *
+     * @return \ezp\Content[]
+     */
+    protected function getRelations()
+    {
+        return $this->relations;
+    }
+
+    /**
+     * Gets Content reverse relations
+     *
+     * @return \ezp\Content[]
+     */
+    protected function getReverseRelations()
+    {
+        return $this->reverseRelations;
+    }
+
+    /**
      * Clone content object
      */
     public function __clone()
     {
+        $this->properties = clone $this->properties;
         $this->properties->id = false;
-        $this->status = self::STATUS_DRAFT;
+        $this->properties->status = self::STATUS_DRAFT;
+        // @todo make sure everything is cloned (versions / fields...) or remove these clone functions
 
         // Get the location's, so that new content will be the old one's sibling
         $oldLocations = $this->locations;

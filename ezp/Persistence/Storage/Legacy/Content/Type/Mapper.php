@@ -13,7 +13,9 @@ use ezp\Persistence\Content\Type,
     ezp\Persistence\Content\Type\UpdateStruct,
     ezp\Persistence\Content\Type\FieldDefinition,
     ezp\Persistence\Content\Type\Group,
-    ezp\Persistence\Content\Type\Group\CreateStruct as GroupCreateStruct;
+    ezp\Persistence\Content\Type\Group\CreateStruct as GroupCreateStruct,
+    ezp\Persistence\Storage\Legacy\Content\StorageFieldDefinition,
+    ezp\Persistence\Storage\Legacy\Content\FieldValue\Converter\Registry as ConverterRegistry;
 
 /**
  * Mapper for Content Type Handler.
@@ -22,6 +24,23 @@ use ezp\Persistence\Content\Type,
  */
 class Mapper
 {
+    /**
+     * Converter registry
+     *
+     * @var ezp\Persistence\Legacy\Content\FieldValue\Converter\Registry
+     */
+    protected $converterRegistry;
+
+    /**
+     * Creates a new content type mapper
+     *
+     * @param ConverterRegistry $converterRegistry
+     */
+    public function __construct( ConverterRegistry $converterRegistry )
+    {
+        $this->converterRegistry = $converterRegistry;
+    }
+
     /**
      * Creates a Group from its create struct.
      *
@@ -45,6 +64,32 @@ class Mapper
         $group->modifierId = $struct->modifierId;
 
         return $group;
+    }
+
+    /**
+     * Extracts Group objects from theb given $rows.
+     *
+     * @param array $rows
+     * @return ezp\Persistence\Content\Type\Group[]
+     */
+    public function extractGroupsFromRows( array $rows )
+    {
+        $groups = array();
+
+        foreach ( $rows as $row )
+        {
+            $group = new Group();
+            $group->id = (int)$row['id'];
+            $group->created = (int)$row['created'];
+            $group->creatorId = (int)$row['creator_id'];
+            $group->modified = (int)$row['modified'];
+            $group->modifierId = (int)$row['modifier_id'];
+            $group->identifier = $row['name'];
+
+            $groups[] = $group;
+        }
+
+        return $groups;
     }
 
     /**
@@ -109,6 +154,10 @@ class Mapper
         $type->nameSchema = $row['ezcontentclass_contentobject_name'];
         $type->isContainer = ( $row['ezcontentclass_is_container'] == 1 );
         $type->initialLanguageId = (int)$row['ezcontentclass_initial_language_id'];
+        $type->defaultAlwaysAvailable = ( $row['ezcontentclass_always_available'] == 1 );
+        $type->sortField = (int)$row['ezcontentclass_sort_field'];
+        $type->sortOrder = (int)$row['ezcontentclass_sort_order'];
+
         $type->groupIds = array();
         $type->fieldDefinitions = array();
 
@@ -120,9 +169,12 @@ class Mapper
      *
      * @param array $row
      * @return FieldDefinition
+     * @todo Handle field definition conversion.
      */
     protected function extractFieldFromRow( array $row )
     {
+        $storageFieldDef = $this->extractStorageFieldFromRow( $row );
+
         $field = new FieldDefinition();
 
         $field->id = (int)$row['ezcontentclass_attribute_id'];
@@ -134,11 +186,41 @@ class Mapper
         $field->isTranslatable = ( $row['ezcontentclass_attribute_can_translate'] == 1 );
         $field->isRequired = $row['ezcontentclass_attribute_is_required'] == 1;
         $field->isInfoCollector = $row['ezcontentclass_attribute_is_information_collector'] == 1;
-        // $field->fieldTypeConstraint ?
-        $field->defaultValue = unserialize( $row['ezcontentclass_attribute_serialized_data_text'] );
-        // Correct ^?
+
+        $field->isSearchable = (bool) $row['ezcontentclass_attribute_is_searchable'];
+        $field->position = (int) $row['ezcontentclass_attribute_placement'];
+
+        $this->toFieldDefinition( $storageFieldDef, $field );
 
         return $field;
+    }
+
+    /**
+     * Extracts a StorageFieldDefinition from $row
+     *
+     * @param array $row
+     * @return StorageFieldDefinition
+     */
+    protected function extractStorageFieldFromRow( array $row )
+    {
+        $storageFieldDef = new StorageFieldDefinition();
+
+        $storageFieldDef->dataFloat1 = (float)$row['ezcontentclass_attribute_data_float1'];
+        $storageFieldDef->dataFloat2 = (float)$row['ezcontentclass_attribute_data_float2'];
+        $storageFieldDef->dataFloat3 = (float)$row['ezcontentclass_attribute_data_float3'];
+        $storageFieldDef->dataFloat4 = (float)$row['ezcontentclass_attribute_data_float4'];
+        $storageFieldDef->dataInt1 = (int)$row['ezcontentclass_attribute_data_int1'];
+        $storageFieldDef->dataInt2 = (int)$row['ezcontentclass_attribute_data_int2'];
+        $storageFieldDef->dataInt3 = (int)$row['ezcontentclass_attribute_data_int3'];
+        $storageFieldDef->dataInt4 = (int)$row['ezcontentclass_attribute_data_int4'];
+        $storageFieldDef->dataText1 = $row['ezcontentclass_attribute_data_text1'];
+        $storageFieldDef->dataText2 = $row['ezcontentclass_attribute_data_text2'];
+        $storageFieldDef->dataText3 = $row['ezcontentclass_attribute_data_text3'];
+        $storageFieldDef->dataText4 = $row['ezcontentclass_attribute_data_text4'];
+        $storageFieldDef->dataText5 = $row['ezcontentclass_attribute_data_text5'];
+        $storageFieldDef->serializedDataText = $row['ezcontentclass_attribute_serialized_data_text'];
+
+        return $storageFieldDef;
     }
 
     /**
@@ -167,6 +249,9 @@ class Mapper
         $type->initialLanguageId = $createStruct->initialLanguageId;
         $type->groupIds = $createStruct->groupIds;
         $type->fieldDefinitions = $createStruct->fieldDefinitions;
+        $type->defaultAlwaysAvailable = $createStruct->defaultAlwaysAvailable;
+        $type->sortField = $createStruct->sortField;
+        $type->sortOrder = $createStruct->sortOrder;
 
         return $type;
     }
@@ -196,7 +281,48 @@ class Mapper
         $createStruct->initialLanguageId = $type->initialLanguageId;
         $createStruct->groupIds = $type->groupIds;
         $createStruct->fieldDefinitions = $type->fieldDefinitions;
+        $createStruct->defaultAlwaysAvailable = $type->defaultAlwaysAvailable;
+        $createStruct->sortField = $type->sortField;
+        $createStruct->sortOrder = $type->sortOrder;
 
         return $createStruct;
+    }
+
+    /**
+     * Maps $fieldDef to the legacy storage specific StorageFieldDefinition
+     *
+     * @param FieldDefinition $fieldDef
+     * @param StorageFieldDefinition $storageFieldDef
+     * @return void
+     */
+    public function toStorageFieldDefinition(
+        FieldDefinition $fieldDef, StorageFieldDefinition $storageFieldDef )
+    {
+        $converter = $this->converterRegistry->getConverter(
+            $fieldDef->fieldType
+        );
+        $converter->toStorageFieldDefinition(
+            $fieldDef,
+            $storageFieldDef
+        );
+    }
+
+    /**
+     * Maps a FieldDefinition from the given $storageFieldDef
+     *
+     * @param StorageFieldDefinition $storageFieldDef
+     * @param FieldDefinition $fieldDef
+     * @return void
+     */
+    public function toFieldDefinition(
+        StorageFieldDefinition $storageFieldDef, FieldDefinition $fieldDef )
+    {
+        $converter = $this->converterRegistry->getConverter(
+            $fieldDef->fieldType
+        );
+        $converter->toFieldDefinition(
+            $storageFieldDef,
+            $fieldDef
+        );
     }
 }

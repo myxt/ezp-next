@@ -12,7 +12,15 @@ use ezp\Persistence\Repository\Handler,
     ezp\Base\ModelStorage,
     ezp\Base\ModelStorageInterface,
     RuntimeException,
-    DomainException;
+    DomainException,
+    ezp\Base\Configuration,
+    ezp\Base\Exception\BadConfiguration,
+    ezp\Base\Exception\InvalidArgumentValue,
+    ezp\Base\Exception\Logic,
+    ezp\Base\ModelDefinition,
+    ezp\Base\Proxy,
+    ezp\Base\ProxyInterface,
+    ezp\User;
 
 /**
  * Repository class
@@ -30,7 +38,7 @@ class Repository
     /**
      * Currently logged in user object for permission purposes
      *
-     * @var \ezp\User
+     * @var \ezp\User|\ezp\Base\ProxyInterface
      */
     protected $user;
 
@@ -54,12 +62,115 @@ class Repository
      * Construct repository object with provided storage engine
      *
      * @param \ezp\Persistence\Repository\Handler $handler
+     * @param \ezp\User|null $user
      */
-    public function __construct( Handler $handler/*, ezp\User $user*/ )
+    public function __construct( Handler $handler, User $user = null )
     {
         $this->handler = $handler;
-        //$this->user = $user;
         $this->objects = new ModelStorage();
+
+        if ( $user !== null )
+            $this->setUser( $user );
+        else
+            $this->user = new Proxy(
+                $this->getUserService(),
+                Configuration::getInstance( 'site' )->get( 'UserSettings', 'AnonymousUserID', 10 )
+            );
+
+    }
+
+    /**
+     * Get current user
+     *
+     * @return \ezp\User
+     */
+    function getUser()
+    {
+        if ( $this->user instanceof ProxyInterface )
+            $this->user = $this->user->load();
+
+        return $this->user;
+    }
+
+    /**
+     * Set current user
+     *
+     * @param \ezp\User $user
+     * @throws \ezp\Base\Exception\InvalidArgumentValue If provided user does not have a valid id value
+     * @todo throw something if $user is not persisted to backend (not stored)
+     */
+    function setUser( User $user )
+    {
+        if ( !$user->id )
+            throw new InvalidArgumentValue( '$user->id', $user->id );
+
+        $this->user = $user;
+    }
+
+    /**
+     * Check if current user has access to a certain function on a model
+     *
+     * @param string $function Eg: read, move, create
+     * @param \ezp\Base\ModelDefinition $module An model instance
+     * @param \ezp\Base\Model $assignment An additional model instance in cases like 'assign' and so on
+     * @return bool
+     * @throws \ezp\Base\Exception\InvalidArgumentValue On invalid $function value
+     * @throws \ezp\Base\Exception\BadConfiguration On missing __module__ in $model::defintion()
+     * @throws \ezp\Base\Exception\Logic On limitation used in policies but not in $model::defintion()
+     */
+    public function canUser( $function, ModelDefinition $model, Model $assignment = null )
+    {
+        $definition = $model->definition();
+        $className = get_class( $model );
+
+        if ( !isset( $definition['module'] ) )
+        {
+            throw new BadConfiguration( "{$className}::definition()", 'missing module key with name of module' );
+        }
+        else if ( !empty( $definition['functions'] ) && !isset( $definition['functions'][$function] ) )
+        {
+            throw new InvalidArgumentValue( '$function', $function, $className );
+        }
+
+        $limitations = $this->getUser()->hasAccessTo( $definition['module'], $function );
+        if ( $limitations === false || $limitations === true )
+        {
+            return $limitations;
+        }
+        else if ( empty( $definition['functions'][$function] ) )
+        {
+            throw new BadConfiguration(
+                "{$className}::definition()",
+                "function limitations returned for '{$function}', but none defined in definition()"
+            );
+        }
+
+        foreach ( $limitations as $limitationKey => $limitationValues )
+        {
+            //if ( isset( $definition[$function][$limitationKey]['alias'] ) )
+                //$limitationKey = $definition[$function][$limitationKey]['alias'];
+
+            if ( !isset( $definition['functions'][$function][$limitationKey]['compare'] ) )
+            {
+                throw new Logic(
+                    "\$definition[functions][{$function}][{$limitationKey}][compare]",
+                    "could not find limitation compare function on {$className}::definition()"
+                );
+            }
+
+            $limitationCompareFn = $definition['functions'][$function][$limitationKey]['compare'];
+            if ( !is_callable( $limitationCompareFn ) )
+            {
+                throw new Logic(
+                    "\$definition[functions][{$function}][{$limitationKey}][compare]",
+                    "compare function from {$className}::definition() is not callable"
+                );
+            }
+
+            if ( !$limitationCompareFn( $model, $limitationValues, $this, $assignment ) )
+                return false;
+        }
+        return true;
     }
 
     /**
@@ -94,6 +205,18 @@ class Repository
     }
 
     /**
+     * Get Content Language Service
+     *
+     * Get service object to perform several operations on Content language objects
+     *
+     * @return \ezp\Content\Language\Service
+     */
+    public function getContentLanguageService()
+    {
+        return $this->service( 'ezp\\Content\\Language\\Service' );
+    }
+
+    /**
      * Get Content Type Service
      *
      * Get service object to perform several operations on Content Type objects and it's aggregate members.
@@ -117,6 +240,19 @@ class Repository
     public function getLocationService()
     {
         return $this->service( 'ezp\\Content\\Location\\Service' );
+    }
+
+    /**
+     * Get Trash service
+     *
+     * Trash service allows to perform operations related to location trash
+     * (trash/untrash, load/list from trash...)
+     *
+     * @return type \ezp\Content\Location\Trash\Service
+     */
+    public function getTrashService()
+    {
+        return $this->service( 'ezp\\Content\\Location\\Trash\\Service' );
     }
 
     /**
@@ -176,61 +312,5 @@ class Repository
     public function rollback()
     {
         $this->handler->rollback();
-    }
-
-    /**
-     * Store a generic domain object
-     *
-     * Store a generic domain object or collection of domain objects in the repository
-     *
-     * @internal
-     * @param \ezp\Base\Model $object
-     * @throws DomainException If object is of wrong type
-     * @throws RuntimeException If errors occurred in storage engine
-     */
-    public function store( Model $object )
-    {
-    }
-
-    /**
-     * Delete a generic domain object or collection of domain objects in the repository
-     *
-     * @internal
-     * @param \ezp\Base\Model $object
-     * @throws DomainException If object is of wrong type
-     * @throws RuntimeException If errors occurred in storage engine
-     */
-    public function delete( Model $object )
-    {
-    }
-
-    /**
-     * Find generic domain objects by criteria
-     *
-     * Retrieve generic domain objects by criteria
-     *
-     * @internal
-     * @param RepositoryCriteriaInterface $criteria
-     * @return \ezp\Base\Model[]
-     * @throws \InvalidArgumentException
-     */
-    public function find( RepositoryCriteriaInterface $criteria )
-    {
-    }
-
-    /**
-     * Get an generic object by id
-     *
-     * This is an alias for find() where query object to filter on id is built for you.
-     * Hence it's assumed that all domain objects will have an id column.
-     *
-     * @internal
-     * @param string $type
-     * @param int $id
-     * @return \ezp\Base\Model
-     * @throws \InvalidArgumentException
-     */
-    public function load( $type, $id )
-    {
     }
 }

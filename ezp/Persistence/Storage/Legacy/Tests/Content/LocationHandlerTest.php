@@ -12,6 +12,7 @@ use ezp\Persistence\Storage\Legacy\Tests\TestCase,
     ezp\Persistence\Storage\Legacy\Content,
     ezp\Persistence\Storage\Legacy\Content\Location\Handler,
     ezp\Persistence,
+    ezp\Persistence\Content\Location\UpdateStruct,
     ezp\Persistence\Content\Location\CreateStruct;
 
 /**
@@ -20,18 +21,18 @@ use ezp\Persistence\Storage\Legacy\Tests\TestCase,
 class LocationHandlerTest extends TestCase
 {
     /**
-     * Mocked content handler instance
-     *
-     * @var \ezp\Persistence\Storage\Legacy\Content\Handler
-     */
-    protected $contentHandler;
-
-    /**
      * Mocked location gateway instance
      *
      * @var \ezp\Persistence\Storage\Legacy\Content\Location\Gateway
      */
     protected $locationGateway;
+
+    /**
+     * Mocked location mapper instance
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Location\Mapper
+     */
+    protected $locationMapper;
 
     /**
      * Returns the test suite with all tests declared in this class.
@@ -47,34 +48,12 @@ class LocationHandlerTest extends TestCase
     {
         $dbHandler = $this->getDatabaseHandler();
         return new Handler(
-            $this->locationGateway = $this->getMock( 'ezp\\Persistence\\Storage\\Legacy\\Content\\Location\\Gateway' )
+            $this->locationGateway = $this->getMock( 'ezp\\Persistence\\Storage\\Legacy\\Content\\Location\\Gateway' ),
+            $this->locationMapper = $this->getMock( 'ezp\\Persistence\\Storage\\Legacy\\Content\\Location\\Mapper' )
         );
     }
 
-    public static function getLoadLocationValues()
-    {
-        return array(
-            array( 'id', 77 ),
-            array( 'priority', 0 ),
-            array( 'hidden', 0 ),
-            array( 'invisible', 0 ),
-            array( 'remoteId', 'dbc2f3c8716c12f32c379dbf0b1cb133' ),
-            array( 'contentId', 75 ),
-            array( 'parentId', 2 ),
-            array( 'pathIdentificationString', 'solutions' ),
-            array( 'pathString', '/1/2/77/' ),
-            array( 'modifiedSubLocation', 1311065017 ),
-            array( 'mainLocationId', 77 ),
-            array( 'depth', 2 ),
-            array( 'sortField', 2 ),
-            array( 'sortOrder', 1 ),
-        );
-    }
-
-    /**
-     * @dataProvider getLoadLocationValues
-     */
-    public function testLoadLocation( $field, $value )
+    public function testLoadLocation()
     {
         $handler = $this->getLocationHandler();
 
@@ -86,31 +65,19 @@ class LocationHandlerTest extends TestCase
                 $this->returnValue(
                     array(
                         'node_id' => 77,
-                        'priority' => 0,
-                        'is_hidden' => 0,
-                        'is_invisible' => 0,
-                        'remote_id' => 'dbc2f3c8716c12f32c379dbf0b1cb133',
-                        'contentobject_id' => 75,
-                        'parent_node_id' => 2,
-                        'path_identification_string' => 'solutions',
-                        'path_string' => '/1/2/77/',
-                        'modified_subnode' => 1311065017,
-                        'main_node_id' => 77,
-                        'depth' => 2,
-                        'sort_field' => 2,
-                        'sort_order' => 1,
                     )
                 )
             );
 
+        $this->locationMapper
+            ->expects( $this->once() )
+            ->method( 'createLocationFromRow' )
+            ->with( array( 'node_id' => 77 ) )
+            ->will( $this->returnValue( new \ezp\Persistence\Content\Location() ) );
+
         $location = $handler->load( 77 );
 
         $this->assertTrue( $location instanceof \ezp\Persistence\Content\Location );
-        $this->assertEquals(
-            $value,
-            $location->$field,
-            "Value in property $field not as expected."
-        );
     }
 
     public function testMoveSubtree()
@@ -246,10 +213,25 @@ class LocationHandlerTest extends TestCase
 
         $this->locationGateway
             ->expects( $this->once() )
-            ->method( 'createLocation' )
+            ->method( 'create' )
             ->with( $createStruct, $parentInfo );
 
-        $handler->createLocation( $createStruct );
+        $handler->create( $createStruct );
+    }
+
+    public function testUpdateLocation()
+    {
+        $handler = $this->getLocationHandler();
+
+        $updateStruct = new UpdateStruct();
+        $updateStruct->priority = 77;
+
+        $this->locationGateway
+            ->expects( $this->once() )
+            ->method( 'update' )
+            ->with( $updateStruct, 23 );
+
+        $handler->update( $updateStruct, 23 );
     }
 
     public function testTrashSubtree()
@@ -276,6 +258,44 @@ class LocationHandlerTest extends TestCase
             ->with( '/1/2/69/' );
 
         $handler->trashSubtree( 69 );
+    }
+
+    public function testUntrashLocation()
+    {
+        $handler = $this->getLocationHandler();
+
+        $this->locationGateway
+            ->expects( $this->at( 0 ) )
+            ->method( 'untrashLocation' )
+            ->with( 69, 23 );
+
+        $handler->untrashLocation( 69, 23 );
+    }
+
+    public function testSetSectionForSubtree()
+    {
+        $handler = $this->getLocationHandler();
+
+        $this->locationGateway
+            ->expects( $this->at( 0 ) )
+            ->method( 'getBasicNodeData' )
+            ->with( 69 )
+            ->will(
+                $this->returnValue(
+                    array(
+                        'node_id' => 69,
+                        'path_string' => '/1/2/69/',
+                        'contentobject_id' => 67,
+                    )
+                )
+            );
+
+        $this->locationGateway
+            ->expects( $this->once() )
+            ->method( 'setSectionForSubtree' )
+            ->with( '/1/2/69/', 3 );
+
+        $handler->setSectionForSubtree( 69, 3 );
     }
 
     public function testMarkSubtreeModified()

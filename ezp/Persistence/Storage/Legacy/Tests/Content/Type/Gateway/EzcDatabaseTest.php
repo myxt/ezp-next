@@ -11,18 +11,32 @@ namespace ezp\Persistence\Storage\Legacy\Tests\Content\Type\Gateway;
 use ezp\Persistence\Storage\Legacy\Tests\TestCase,
     ezp\Persistence\Storage\Legacy\Tests\Content\Type\Gateway,
     ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase,
+    ezp\Persistence\Storage\Legacy\Content\Language\Cache as LanguageCache,
+    ezp\Persistence\Storage\Legacy\Content\Language\MaskGenerator as LanguageMaskGenerator,
+
+    // For SORT_ORDER_* constants
+    ezp\Persistence\Content\Location,
+    ezp\Persistence\Content\Language,
 
     ezp\Persistence\Content\Type,
     ezp\Persistence\Content\Type\FieldDefinition,
     ezp\Persistence\Content\Type\UpdateStruct,
     ezp\Persistence\Content\Type\Group,
-    ezp\Persistence\Content\Type\Group\UpdateStruct as GroupUpdateStruct;
+    ezp\Persistence\Content\Type\Group\UpdateStruct as GroupUpdateStruct,
+    ezp\Persistence\Storage\Legacy\Content\StorageFieldDefinition;
 
 /**
  * Test case for ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase.
  */
 class EzcDatabaseTest extends TestCase
 {
+    /**
+     * The EzcDatabase gateway to test
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase
+     */
+    protected $gateway;
+
     public function setUp()
     {
         parent::setUp();
@@ -37,7 +51,7 @@ class EzcDatabaseTest extends TestCase
     public function testCtor()
     {
         $handlerMock = $this->getDatabaseHandler();
-        $gateway = new EzcDatabase( $handlerMock );
+        $gateway = $this->getGateway();
 
         $this->assertAttributeSame(
             $handlerMock,
@@ -52,7 +66,7 @@ class EzcDatabaseTest extends TestCase
      */
     public function testInsertGroup()
     {
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $group = $this->getGroupFixture();
 
@@ -119,7 +133,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_groups.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $struct = $this->getGroupUpdateStructFixture();
 
@@ -145,19 +159,32 @@ class EzcDatabaseTest extends TestCase
                 'modifier_id',
                 'name'
             )
-            ->from( 'ezcontentclassgroup' )
-            ->where(
-                $q->expr->eq( 'id', 2 )
-            );
+            ->from( 'ezcontentclassgroup' );
         $this->assertQueryResult(
             array(
+                array(
+                    'id' => 1,
+                    'created' => 1031216928,
+                    'creator_id' => 14,
+                    'modified' => 1033922106,
+                    'modifier_id' => 14,
+                    'name' => 'Content',
+                ),
                 array(
                     'id' => 2,
                     'created' => 1031216941,
                     'creator_id' => 14,
                     'modified' => 1311454096,
                     'modifier_id' => 23,
-                    'name' => 'UpdatedGroupName',
+                    'name' => 'UpdatedGroup',
+                ),
+                array(
+                    'id' => 3,
+                    'created' => 1032009743,
+                    'creator_id' => 14,
+                    'modified' => 1033922120,
+                    'modifier_id' => 14,
+                    'name' => 'Media',
                 ),
             ),
             $q
@@ -191,6 +218,156 @@ class EzcDatabaseTest extends TestCase
 
     /**
      * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::countTypesInGroup
+     */
+    public function testCountTypesInGroup()
+    {
+        $this->insertDatabaseFixture(
+            __DIR__ . '/_fixtures/existing_types.php'
+        );
+
+        $gateway = $this->getGateway();
+
+        $this->assertEquals(
+            3,
+            $gateway->countTypesInGroup( 1 )
+        );
+        $this->assertEquals(
+            0,
+            $gateway->countTypesInGroup( 23 )
+        );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::countGroupsForType
+     */
+    public function testCountGroupsForType()
+    {
+        $this->insertDatabaseFixture(
+            __DIR__ . '/_fixtures/existing_types.php'
+        );
+
+        $gateway = $this->getGateway();
+
+        $this->assertEquals(
+            1,
+            $gateway->countGroupsForType( 1, 1 )
+        );
+        $this->assertEquals(
+            0,
+            $gateway->countGroupsForType( 23, 0 )
+        );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::deleteGroup
+     */
+    public function testDeleteGroup()
+    {
+        $this->insertDatabaseFixture(
+            __DIR__ . '/_fixtures/existing_groups.php'
+        );
+
+        $gateway = $this->getGateway();
+
+        $gateway->deleteGroup( 2 );
+
+        $this->assertQueryResult(
+            array(
+                array( '1' ),
+                array( '3' ),
+            ),
+            $this->getDatabaseHandler()
+                ->createSelectQuery()
+                ->select( 'id' )
+                ->from( 'ezcontentclassgroup' )
+        );
+    }
+
+    /**
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::loadGroupData
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::createGroupLoadQuery
+     * @return void
+     */
+    public function testLoadGroupData()
+    {
+        $this->insertDatabaseFixture(
+            __DIR__ . '/_fixtures/existing_groups.php'
+        );
+
+        $gateway = $this->getGateway();
+        $data = $gateway->loadGroupData( 2 );
+
+        $this->assertSame(
+            array(
+                array(
+                    'created' => '1031216941',
+                    'creator_id' => '14',
+                    'id' => '2',
+                    'modified' => '1033922113',
+                    'modifier_id' => '14',
+                    'name' => 'Users',
+                )
+            ),
+            $data
+        );
+    }
+
+    /**
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::loadAllGroupsData
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::createGroupLoadQuery
+     * @return void
+     */
+    public function testLoadAllGroupsData()
+    {
+        $this->insertDatabaseFixture(
+            __DIR__ . '/_fixtures/existing_groups.php'
+        );
+
+        $gateway = $this->getGateway();
+        $data = $gateway->loadAllGroupsData();
+
+        $this->assertEquals(
+            3,
+            count( $data )
+        );
+
+        $this->assertSame(
+            array(
+                'created' => '1031216941',
+                'creator_id' => '14',
+                'id' => '2',
+                'modified' => '1033922113',
+                'modifier_id' => '14',
+                'name' => 'Users',
+            ),
+            $data[1]
+        );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::loadTypesDataForGroup
+     */
+    public function testLoadTypesDataForGroup()
+    {
+        $this->insertDatabaseFixture(
+            __DIR__ . '/_fixtures/existing_types.php'
+        );
+
+        $gateway = $this->getGateway();
+        $rows = $gateway->loadTypesDataForGroup( 1, 0 );
+
+        $this->assertEquals(
+            6,
+            count( $rows )
+        );
+    }
+
+    /**
+     * @return void
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::loadTypeData
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::selectColumns
      */
@@ -200,7 +377,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
         $rows = $gateway->loadTypeData( 1, 0 );
 
         $this->assertEquals(
@@ -222,6 +399,11 @@ class EzcDatabaseTest extends TestCase
          */
     }
 
+    /**
+     * Returns the expected data from creating a type.
+     *
+     * @return string[][]
+     */
     public static function getTypeCreationExpectations()
     {
         return array(
@@ -238,7 +420,7 @@ class EzcDatabaseTest extends TestCase
             array( 'remote_id', 'a3d405b81be900468eb153d774f4f0d2' ),
             array( 'serialized_description_list', 'a:2:{i:0;s:0:"";s:16:"always-available";b:0;}' ),
             array( 'serialized_name_list', 'a:3:{s:16:"always-available";s:6:"eng-US";s:6:"eng-US";s:6:"Folder";s:6:"eng-GB";s:11:"Folder (GB)";}' ),
-            array( 'sort_field', 1 ),
+            array( 'sort_field', 7 ),
             array( 'sort_order', 1 ),
             array( 'url_alias_name', '' ),
             array( 'version', '0' ),
@@ -249,16 +431,17 @@ class EzcDatabaseTest extends TestCase
      * @dataProvider getTypeCreationExpectations
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::insertType
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::setCommonTypeColumns
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::insertTypeNameData
      */
     public function testInsertType( $column, $expectation )
     {
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
         $type = $this->getTypeFixture();
 
         $gateway->insertType( $type );
 
         $this->assertQueryResult(
-            array( array($expectation ) ),
+            array( array( $expectation ) ),
             $this->getDatabaseHandler()
                 ->createSelectQuery()
                 ->select( $column )
@@ -267,6 +450,11 @@ class EzcDatabaseTest extends TestCase
         );
     }
 
+    /**
+     * Returns the data expected to be inserted in ezcontentclass_name.
+     *
+     * @return string[][]
+     */
     public static function getTypeCreationContentClassNameExpectations()
     {
         return array(
@@ -285,13 +473,19 @@ class EzcDatabaseTest extends TestCase
      */
     public function testInsertTypeContentClassName( $column, $expectation )
     {
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
         $type = $this->getTypeFixture();
 
         $gateway->insertType( $type );
 
         $this->assertQueryResult(
-            array_map( function( $value ) { return array( $value ); }, $expectation ),
+            array_map(
+                function( $value )
+                {
+                    return array( $value );
+                },
+                $expectation
+            ),
             $this->getDatabaseHandler()
                 ->createSelectQuery()
                 ->select( $column )
@@ -329,6 +523,8 @@ class EzcDatabaseTest extends TestCase
         $type->nameSchema = '<short_name|name>';
         $type->isContainer = true;
         $type->initialLanguageId = 2;
+        $type->sortField = Location::SORT_FIELD_CLASS_NAME;
+        $type->sortOrder = Location::SORT_ORDER_ASC;
 
         return $type;
     }
@@ -340,11 +536,12 @@ class EzcDatabaseTest extends TestCase
      */
     public function testInsertFieldDefinition()
     {
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $field = $this->getFieldDefinitionFixture();
+        $storageField = $this->getStorageFieldDefinitionFixture();
 
-        $gateway->insertFieldDefinition( 23, 1, $field );
+        $gateway->insertFieldDefinition( 23, 1, $field, $storageField );
 
         $this->assertQueryResult(
             array(
@@ -353,7 +550,7 @@ class EzcDatabaseTest extends TestCase
                     'serialized_name_list' => 'a:2:{s:16:"always-available";s:6:"eng-US";s:6:"eng-US";s:11:"Description";}',
                     'serialized_description_list' => 'a:2:{s:16:"always-available";s:6:"eng-GB";s:6:"eng-GB";s:16:"Some description";}',
                     'identifier' => 'description',
-                    'category' => '',
+                    'category' => 'meta',
                     'placement' => '4',
                     'data_type_string' => 'ezxmltext',
                     'can_translate' => '1',
@@ -361,6 +558,21 @@ class EzcDatabaseTest extends TestCase
                     'is_information_collector' => '1',
                     'serialized_data_text' => 'a:2:{i:0;s:0:"";s:16:"always-available";b:0;}',
                     'version' => '1',
+
+                    'data_float1' => '0.1',
+                    'data_float2' => '0.2',
+                    'data_float3' => '0.3',
+                    'data_float4' => '0.4',
+                    'data_int1' => '1',
+                    'data_int2' => '2',
+                    'data_int3' => '3',
+                    'data_int4' => '4',
+                    'data_text1' => 'a',
+                    'data_text2' => 'b',
+                    'data_text3' => 'c',
+                    'data_text4' => 'd',
+                    'data_text5' => 'e',
+                    'serialized_data_text' => 'a:2:{i:0;s:3:"foo";i:1;s:3:"bar";}'
                 ),
             ),
             $this->getDatabaseHandler()
@@ -377,7 +589,22 @@ class EzcDatabaseTest extends TestCase
                     'is_required',
                     'is_information_collector',
                     'serialized_data_text',
-                    'version'
+                    'version',
+
+                    'data_float1',
+                    'data_float2',
+                    'data_float3',
+                    'data_float4',
+                    'data_int1',
+                    'data_int2',
+                    'data_int3',
+                    'data_int4',
+                    'data_text1',
+                    'data_text2',
+                    'data_text3',
+                    'data_text4',
+                    'data_text5',
+                    'serialized_data_text'
                 )
                 ->from( 'ezcontentclass_attribute' ),
             'FieldDefinition not inserted correctly'
@@ -402,7 +629,7 @@ class EzcDatabaseTest extends TestCase
             'eng-GB' => 'Some description',
         );
         $field->identifier = 'description';
-        $field->fieldGroup = '';
+        $field->fieldGroup = 'meta';
         $field->position = 4;
         $field->fieldType = 'ezxmltext';
         $field->isTranslatable = true;
@@ -418,6 +645,38 @@ class EzcDatabaseTest extends TestCase
     }
 
     /**
+     * Returns a StorageFieldDefinition fixture
+     *
+     * @return StorageFieldDefinition
+     */
+    protected function getStorageFieldDefinitionFixture()
+    {
+        $fieldDef = new StorageFieldDefinition();
+
+        $fieldDef->dataFloat1 = 0.1;
+        $fieldDef->dataFloat2 = 0.2;
+        $fieldDef->dataFloat3 = 0.3;
+        $fieldDef->dataFloat4 = 0.4;
+
+        $fieldDef->dataInt1 = 1;
+        $fieldDef->dataInt2 = 2;
+        $fieldDef->dataInt3 = 3;
+        $fieldDef->dataInt4 = 4;
+
+        $fieldDef->dataText1 = 'a';
+        $fieldDef->dataText2 = 'b';
+        $fieldDef->dataText3 = 'c';
+        $fieldDef->dataText4 = 'd';
+        $fieldDef->dataText5 = 'e';
+
+        $fieldDef->serializedDataText = array(
+            'foo', 'bar'
+        );
+
+        return $fieldDef;
+    }
+
+    /**
      * @return void
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::deleteFieldDefinition
      */
@@ -427,7 +686,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->deleteFieldDefinition( 1, 0, 119 );
 
@@ -452,15 +711,16 @@ class EzcDatabaseTest extends TestCase
         );
         $fieldDefinitionFixture = $this->getFieldDefinitionFixture();
         $fieldDefinitionFixture->id = 160;
+        $storageFieldDefinitionFixture = $this->getStorageFieldDefinitionFixture();
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
-        $gateway->updateFieldDefinition( 2, 0, $fieldDefinitionFixture );
+        $gateway = $this->getGateway();
+        $gateway->updateFieldDefinition( 2, 0, $fieldDefinitionFixture, $storageFieldDefinitionFixture );
 
         $this->assertQueryResult(
             array(
                 // "random" sample
                 array(
-                    'category' => '',
+                    'category' => 'meta',
                     'contentclass_id' => '2',
                     'version' => '0',
                     'data_type_string' => 'ezxmltext',
@@ -468,6 +728,21 @@ class EzcDatabaseTest extends TestCase
                     'is_information_collector' => '1',
                     'placement' => '4',
                     'serialized_description_list' => 'a:2:{s:16:"always-available";s:6:"eng-GB";s:6:"eng-GB";s:16:"Some description";}',
+
+                    'data_float1' => '0.1',
+                    'data_float2' => '0.2',
+                    'data_float3' => '0.3',
+                    'data_float4' => '0.4',
+                    'data_int1' => '1',
+                    'data_int2' => '2',
+                    'data_int3' => '3',
+                    'data_int4' => '4',
+                    'data_text1' => 'a',
+                    'data_text2' => 'b',
+                    'data_text3' => 'c',
+                    'data_text4' => 'd',
+                    'data_text5' => 'e',
+                    'serialized_data_text' => 'a:2:{i:0;s:3:"foo";i:1;s:3:"bar";}'
                 ),
             ),
             $this->getDatabaseHandler()
@@ -480,7 +755,22 @@ class EzcDatabaseTest extends TestCase
                     'identifier',
                     'is_information_collector',
                     'placement',
-                    'serialized_description_list'
+                    'serialized_description_list',
+
+                    'data_float1',
+                    'data_float2',
+                    'data_float3',
+                    'data_float4',
+                    'data_int1',
+                    'data_int2',
+                    'data_int3',
+                    'data_int4',
+                    'data_text1',
+                    'data_text2',
+                    'data_text3',
+                    'data_text4',
+                    'data_text5',
+                    'serialized_data_text'
                 )
                 ->from( 'ezcontentclass_attribute' )
                 ->where( 'id = 160' ),
@@ -500,7 +790,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_groups.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->insertGroupAssignement( 3, 42, 1 );
 
@@ -534,7 +824,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->deleteGroupAssignement( 1, 1, 0 );
 
@@ -553,14 +843,15 @@ class EzcDatabaseTest extends TestCase
      * @return void
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::updateType
      * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::setCommonTypeColumns
+     * @dataProvider getTypeUpdateExpectations
      */
-    public function testUpdateType()
+    public function testUpdateType( $fieldName, $expectedValue )
     {
         $this->insertDatabaseFixture(
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $updateStruct = $this->getTypeUpdateFixture();
 
@@ -569,25 +860,86 @@ class EzcDatabaseTest extends TestCase
         $this->assertQueryResult(
             array(
                 array(
-                    // "random" sample
-                    'serialized_name_list' => 'a:2:{s:16:"always-available";s:6:"eng-US";s:6:"eng-US";s:10:"New Folder";}',
-                    'created' => '1024392098',
-                    'modifier_id' => '42',
-                    'remote_id' => 'foobar',
+                    $fieldName => $expectedValue
                 )
             ),
             $this->getDatabaseHandler()
                 ->createSelectQuery()
                 ->select(
-                    'serialized_name_list',
-                    'created',
-                    'modifier_id',
-                    'remote_id'
+                    $fieldName
                 )->from( 'ezcontentclass' )
                 ->where( 'id = 1 AND version = 0' ),
-            'Inserted Type data incorrect'
+            "Incorrect value stored for '{$fieldName}'."
+        );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::deleteTypeNameData
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::insertTypeNameData
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::updateType
+     */
+    public function testUpdateTypeName()
+    {
+        $this->insertDatabaseFixture(
+            __DIR__ . '/_fixtures/existing_types.php'
         );
 
+        $gateway = $this->getGateway();
+
+        $updateStruct = $this->getTypeUpdateFixture();
+
+        $gateway->updateType( 1, 0, $updateStruct );
+
+        $this->assertQueryResult(
+            array(
+                array(
+                    'contentclass_id' => 1,
+                    'contentclass_version' => 0,
+                    'language_id' => 3,
+                    'language_locale' => 'eng-US',
+                    'name' => 'New Folder'
+                ),
+                array(
+                    'contentclass_id' => 1,
+                    'contentclass_version' => 0,
+                    'language_id' => 4,
+                    'language_locale' => 'eng-GB',
+                    'name' => 'New Folder for you'
+                )
+            ),
+            $this->getDatabaseHandler()
+                ->createSelectQuery()
+                ->select( '*' )
+                ->from( 'ezcontentclass_name' )
+                ->where( 'contentclass_id = 1 AND contentclass_version = 0' )
+        );
+    }
+
+    /**
+     * Returns expected data after update
+     *
+     * Data provider for {@link testUpdateType()}.
+     *
+     * @return string[][]
+     */
+    public static function getTypeUpdateExpectations()
+    {
+        return array(
+            array( 'serialized_name_list', 'a:3:{s:16:"always-available";s:6:"eng-US";s:6:"eng-US";s:10:"New Folder";s:6:"eng-GB";s:18:"New Folder for you";}' ),
+            array( 'serialized_description_list', 'a:2:{i:0;s:0:"";s:16:"always-available";b:0;}' ),
+            array( 'identifier', 'new_folder' ),
+            array( 'modified', '1311621548' ),
+            array( 'modifier_id', '42' ),
+            array( 'remote_id', 'foobar' ),
+            array( 'url_alias_name', 'some scheke' ),
+            array( 'contentobject_name', '<short_name>' ),
+            array( 'is_container', '0' ),
+            array( 'initial_language_id', '23' ),
+            array( 'sort_field', '3' ),
+            array( 'sort_order', '0' ),
+            array( 'always_available', '1' ),
+        );
     }
 
     /**
@@ -602,6 +954,7 @@ class EzcDatabaseTest extends TestCase
         $struct->name = array(
             'always-available' => 'eng-US',
             'eng-US' => 'New Folder',
+            'eng-GB' => 'New Folder for you',
         );
         $struct->description = array(
             0 => '',
@@ -615,8 +968,51 @@ class EzcDatabaseTest extends TestCase
         $struct->nameSchema = '<short_name>';
         $struct->isContainer = false;
         $struct->initialLanguageId = 23;
+        $struct->sortField = 3;
+        $struct->sortOrder = Location::SORT_ORDER_DESC;
+        $struct->defaultAlwaysAvailable = true;
 
         return $struct;
+    }
+
+    /**
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::countInstancesOfType
+     * @return void
+     */
+    public function testCountInstancesOfTypeExist()
+    {
+        $this->insertDatabaseFixture(
+            // Fixture for content objects
+            __DIR__ . '/../../_fixtures/contentobjects.php'
+        );
+
+        $gateway = $this->getGateway();
+        $res = $gateway->countInstancesOfType( 3, 0 );
+
+        $this->assertEquals(
+            6,
+            $res
+        );
+    }
+
+    /**
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::countInstancesOfType
+     * @return void
+     */
+    public function testCountInstancesOfTypeNotExist()
+    {
+        $this->insertDatabaseFixture(
+            // Fixture for content objects
+            __DIR__ . '/../../_fixtures/contentobjects.php'
+        );
+
+        $gateway = $this->getGateway();
+        $res = $gateway->countInstancesOfType( 23422342, 1 );
+
+        $this->assertEquals(
+            0,
+            $res
+        );
     }
 
     /**
@@ -629,7 +1025,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->deleteFieldDefinitionsForType( 1, 0 );
 
@@ -671,7 +1067,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->deleteFieldDefinitionsForType( 23, 1 );
 
@@ -696,7 +1092,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->deleteGroupAssignementsForType( 1, 0 );
 
@@ -721,7 +1117,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->deleteType( 23, 1 );
 
@@ -746,7 +1142,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->deleteType( 1, 0 );
 
@@ -771,7 +1167,7 @@ class EzcDatabaseTest extends TestCase
             __DIR__ . '/_fixtures/existing_types.php'
         );
 
-        $gateway = new EzcDatabase( $this->getDatabaseHandler() );
+        $gateway = $this->getGateway();
 
         $gateway->deleteType( 23, 1 );
 
@@ -784,6 +1180,83 @@ class EzcDatabaseTest extends TestCase
             array( array( 2 ) ),
             $countAffectedAttr
         );
+    }
+
+    /**
+     * @return void
+     * @covers ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase::publishTypeAndFields
+     */
+    public function testPublishTypeAndFields()
+    {
+        $this->insertDatabaseFixture(
+            __DIR__ . '/_fixtures/type_to_publish.php'
+        );
+
+        $gateway = $this->getGateway();
+        $gateway->publishTypeAndFields( 1, 1, 0 );
+
+        $this->assertQueryResult(
+            array( array( 1 ) ),
+            $this->getDatabaseHandler()->createSelectQuery()
+                ->select( 'COUNT( * )' )
+                ->from( 'ezcontentclass' )
+                ->where( 'id = 1 AND version = 0' )
+        );
+
+        $this->assertQueryResult(
+            array( array( 5 ) ),
+            $this->getDatabaseHandler()->createSelectQuery()
+                ->select( 'COUNT( * )' )
+                ->from( 'ezcontentclass_attribute' )
+                ->where( 'contentclass_id = 1 AND version = 0' )
+        );
+
+        $this->assertQueryResult(
+            array( array( 1 ) ),
+            $this->getDatabaseHandler()->createSelectQuery()
+                ->select( 'COUNT( * )' )
+                ->from( 'ezcontentclass_name' )
+                ->where( 'contentclass_id = 1 AND contentclass_version = 0' )
+        );
+    }
+
+    /**
+     * Returns the EzcDatabase gateway to test
+     *
+     * @return \ezp\Persistence\Storage\Legacy\Content\Type\Gateway\EzcDatabase
+     */
+    protected function getGateway()
+    {
+        if ( !isset( $this->gateway ) )
+        {
+            $this->gateway = new EzcDatabase(
+                $this->getDatabaseHandler(),
+                $this->getLanguageMaskGenerator()
+            );
+        }
+        return $this->gateway;
+    }
+
+    /**
+     * Returns a Language MaskGenerator
+     *
+     * @return \ezp\Persistence\Storage\Legacy\Content\Language\MaskGenerator
+     */
+    protected function getLanguageMaskGenerator()
+    {
+        $languageUs = new Language();
+        $languageUs->id = 2;
+        $languageUs->locale = 'eng-US';
+
+        $languageGb = new Language();
+        $languageGb->id = 4;
+        $languageGb->locale = 'eng-GB';
+
+        $cache = new LanguageCache();
+        $cache->store( $languageUs );
+        $cache->store( $languageGb );
+
+        return new LanguageMaskGenerator( $cache );
     }
 
     /**

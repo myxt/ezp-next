@@ -9,7 +9,9 @@
 
 namespace ezp\Content\Query;
 use ezp\Persistence\Content\Criterion,
+    ezp\Persistence\Content\Query\SortClause,
     ezp\Base\Exception\PropertyNotFound,
+    ezp\Base\Exception\InvalidArgumentValue,
     InvalidArgumentException,
     ezp\Content\CriterionFactory,
     ezp\Content\Query;
@@ -27,30 +29,35 @@ use ezp\Persistence\Content\Criterion,
  * $queryBuilder->addCriteria( $queryBuilder->contentType->eq( null, 'article' ) );
  * </code>
  *
- * @property-read ezp\Content\CriterionFactory $field A new Field CriterionFactory
- * @property-read ezp\Content\CriterionFactory $metaData A new MetaData CriterionFactory
- * @property-read ezp\Content\CriterionFactory $dateMetadata A new DateMetadata CriterionFactory
- * @property-read ezp\Content\CriterionFactory $contentId A new ContentId CriterionFactory
- * @property-read ezp\Content\CriterionFactory $contentType A new ContentType CriterionFactory
- * @property-read ezp\Content\CriterionFactory $contentTypeGroup A new ContentTypeGroup CriterionFactory
- * @property-read ezp\Content\CriterionFactory $field A new field CriterionFactory
- * @property-read ezp\Content\CriterionFactory $fullText A new FullText CriterionFactory
- * @property-read ezp\Content\CriterionFactory $locationId A new LocationId CriterionFactory
- * @property-read ezp\Content\CriterionFactory $parentLocationId A new ParentLocationId CriterionFactory
- * @property-read ezp\Content\CriterionFactory $permission A new Permission CriterionFactory
- * @property-read ezp\Content\CriterionFactory $section A new Section CriterionFactory
- * @property-read ezp\Content\CriterionFactory $subtree A new Subtree CriterionFactory
- * @property-read ezp\Content\CriterionFactory $urlAlias An new UrlAlias CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $field A new Field CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $metaData A new MetaData CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $dateMetadata A new DateMetadata CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $contentId A new ContentId CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $contentType A new ContentType CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $contentTypeGroup A new ContentTypeGroup CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $field A new field CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $fullText A new FullText CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $locationId A new LocationId CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $parentLocationId A new ParentLocationId CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $permission A new Permission CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $section A new Section CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $subtree A new Subtree CriterionFactory
+ * @property-read \ezp\Content\CriterionFactory $urlAlias An new UrlAlias CriterionFactory
  *
- * @property-read ezp\Content\CriterionFactory $or New logical OR criterion (alias for {@see $lOr})
- * @property-read ezp\Content\CriterionFactory $lOr New logical OR criterion
- * @property-read ezp\Content\CriterionFactory $and New logical AND criterion (alias for {@see $lAnd})
- * @property-read ezp\Content\CriterionFactory $lAnd New logical AND criterion
- * @property-read ezp\Content\CriterionFactory $not New logical NOT criterion (alias for {@see $lNot})
- * @property-read ezp\Content\CriterionFactory $lNot
+ * @property-read \ezp\Content\CriterionFactory $or New logical OR criterion (alias for {@see $lOr})
+ * @property-read \ezp\Content\CriterionFactory $lOr New logical OR criterion
+ * @property-read \ezp\Content\CriterionFactory $and New logical AND criterion (alias for {@see $lAnd})
+ * @property-read \ezp\Content\CriterionFactory $lAnd New logical AND criterion
+ * @property-read \ezp\Content\CriterionFactory $not New logical NOT criterion (alias for {@see $lNot})
+ * @property-read \ezp\Content\CriterionFactory $lNot
  */
 class Builder
 {
+    public function __construct()
+    {
+        $this->sort = new SortClauseBuilder();
+    }
+
     /**
      * Magic getter.
      * Gives access to criteria classes by means of their class name:
@@ -76,7 +83,8 @@ class Builder
      * The given criteria will be added with a logical AND, meaning that they must all match.
      * To handle OR criteria, the {@see or}/{@see lOr} methods must be used.
      *
-     * @param Criterion $c
+     * @param \ezp\Persistence\Content\Criterion..$ $c
+     * @return \ezp\Content\Query\Builder
      */
     public function addCriteria( Criterion $c )
     {
@@ -88,14 +96,16 @@ class Builder
             }
             $this->criteria[] = $arg;
         }
+
+        return $this;
     }
 
     /**
      * Logical or
      * Criterion: Criterion\LogicalAnd
      *
-     * @param Criterion $elementOne
-     * @param Criterion $elementTwo$...
+     * @param \ezp\Persistence\Content\Criterion $elementOne
+     * @param \ezp\Persistence\Content\Criterion $elementTwo$...
      *
      * @return \ezp\Persistence\Content\Criterion\LogicalOr
      */
@@ -109,8 +119,8 @@ class Builder
      * Logical and
      * Criterion: Criterion\LogicalAnd
      *
-     * @param Criterion $elementOne
-     * @param Criterion $elementTwo$...
+     * @param \ezp\Persistence\Content\Criterion $elementOne
+     * @param \ezp\Persistence\Content\Criterion $elementTwo$...
      *
      * @return \ezp\Persistence\Content\Criterion\LogicalAnd
      */
@@ -124,7 +134,7 @@ class Builder
      * Logical not
      * Criterion: Criterion\LogicalNot
      *
-     * @param Criterion $criterion
+     * @param \ezp\Persistence\Content\Criterion $criterion
      *
      * @return \ezp\Persistence\Content\Criterion\LogicalNot
      */
@@ -160,18 +170,90 @@ class Builder
     }
 
     /**
+     * Adds new sorting clause objects to the query. One to many objects can be provided.
+     *
+     * @param \ezp\Persistence\Content\SortClause..$ $sortClause
+     *
+     * @return \ezp\Content\Query\Builder Self
+     */
+    public function addSortClause( SortClause $sortClause )
+    {
+        foreach ( func_get_args() as $arg )
+        {
+            if ( !$arg instanceof SortClause )
+            {
+                throw new InvalidArgumentException( "All arguments must be instances of ezp\Persistence\Content\Query\SortClause" );
+            }
+            $this->sortClauses[] = $arg;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Sets the query offset to $offset
+     * @param int $offset
+     * @return \ezp\Content\Query\Builder Self
+     * @throws \ezp\Base\Exception\InvalidArgumentValue if $limit isn't an integer >= 0
+     */
+    public function setOffset( $offset )
+    {
+        if ( intval( $offset ) != $offset || $offset < 0 )
+        {
+            throw new InvalidArgumentValue( 'offset', $offset );
+        }
+        $this->offset = $offset;
+
+        return $this;
+    }
+
+    /**
+     * Sets the query offset to $limit.
+     * A limit of 0 means no limit.
+     *
+     * @param int $offset
+     * @return \ezp\Content\Query\Builder Self
+     * @throws \ezp\Base\Exception\InvalidArgumentValue if $limit isn't an integer >= 0
+     */
+    public function setLimit( $limit )
+    {
+        if ( intval( $limit ) != $limit || $limit < 0 )
+        {
+            throw new InvalidArgumentValue( 'limit', $limit );
+        }
+        $this->limit = $limit;
+
+        return $this;
+    }
+
+    /**
      * Returns the query
-     * @return Query
+     * @return \ezp\Content\Query
      */
     public function getQuery()
     {
         $query = new Query;
 
-        // group all the criteria with a LogicalAnd
-        $query->criteria = call_user_func_array(
-            array( $this, 'and' ),
-            $this->criteria
-        );
+        if ( count( $this->criteria ) > 0 )
+        {
+            // group all the criteria with a LogicalAnd
+            if ( count( $this->criteria ) > 1 )
+            {
+                $query->criterion = call_user_func_array(
+                    array( $this, 'and' ),
+                    $this->criteria
+                );
+            }
+            // directly inject the criterion
+            else
+            {
+                $query->criterion = $this->criteria[0];
+            }
+        }
+
+        $query->sortClauses = $this->sortClauses;
+        $query->limit = $this->limit;
+        $query->offset = $this->offset;
 
         return $query;
     }
@@ -181,5 +263,29 @@ class Builder
      * @var Criterion[]
      */
     private $criteria = array();
+
+    /**
+     * SortClause objects array
+     * @var \ezp\Persistence\Content\Query\SortClause[]
+     */
+    private $sortClauses = array();
+
+    /**
+     * Sort clause builder
+     * @var \ezp\Content\Query\SortClauseBuilder
+     */
+    public $sort;
+
+    /**
+     * Query offset, starting from 0
+     * @var int
+     */
+    public $offset = 0;
+
+    /**
+     * Query limit, as a number of items
+     * @var int
+     */
+    public $limit = 0;
 }
 ?>

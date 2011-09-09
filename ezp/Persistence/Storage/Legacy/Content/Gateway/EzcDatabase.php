@@ -10,8 +10,10 @@
 
 namespace ezp\Persistence\Storage\Legacy\Content\Gateway;
 use ezp\Persistence\Storage\Legacy\Content\Gateway,
+    ezp\Persistence\Storage\Legacy\Content\Gateway\EzcDatabase\QueryBuilder,
     ezp\Persistence\Storage\Legacy\EzcDbHandler,
     ezp\Persistence\Storage\Legacy\Content\StorageFieldValue,
+    ezp\Persistence\Storage\Legacy\Content\Language\MaskGenerator as LanguageMaskGenerator,
     ezp\Persistence\Content,
     ezp\Persistence\Content\UpdateStruct,
     ezp\Persistence\Content\Version,
@@ -30,13 +32,34 @@ class EzcDatabase extends Gateway
     protected $dbHandler;
 
     /**
+     * Query builder.
+     *
+     * @var ezp\Persistence\Storage\Legacy\Content\Gateway\EzcDatabase\QueryBuilder
+     */
+    protected $queryBuilder;
+
+    /**
+     * Language mask generator
+     *
+     * @var \ezp\Persistence\Storage\Legacy\Content\Language\MaskGenerator
+     */
+    protected $languageMaskGenerator;
+
+    /**
      * Creates a new gateway based on $db
      *
      * @param EzcDbHandler $db
+     * @param \ezp\Persistence\Storage\Legacy\Content\Gateway\EzcDatabase\QueryBuilder $queryBuilder
+     * @param \ezp\Persistence\Storage\Legacy\Content\Language\MaskGenerator $languageMaskGenerator
      */
-    public function __construct( EzcDbHandler $db )
+    public function __construct(
+        EzcDbHandler $db,
+        EzcDatabase\QueryBuilder $queryBuilder,
+        LanguageMaskGenerator $languageMaskGenerator )
     {
-        $this->dbHandler = $db;
+        $this->dbHandler             = $db;
+        $this->queryBuilder          = $queryBuilder;
+        $this->languageMaskGenerator = $languageMaskGenerator;
     }
 
     /**
@@ -48,16 +71,24 @@ class EzcDatabase extends Gateway
      */
     public function insertContentObject( Content $content )
     {
+        if ( is_array( $content->name ) && isset( $content->name['always-available'] ) )
+        {
+            $name = $content->name[$content->name['always-available']];
+        }
+        else
+        {
+            $name = '';
+        }
+
         $q = $this->dbHandler->createInsertQuery();
         $q->insertInto(
             $this->dbHandler->quoteTable( 'ezcontentobject' )
         )->set(
-            // @FIXME: Determine version?
             $this->dbHandler->quoteColumn( 'current_version' ),
-            $q->bindValue( 1, null, \PDO::PARAM_INT )
+            $q->bindValue( $content->currentVersionNo, null, \PDO::PARAM_INT )
         )->set(
             $this->dbHandler->quoteColumn( 'name' ),
-            $q->bindValue( $content->name )
+            $q->bindValue( $name )
         )->set(
             $this->dbHandler->quoteColumn( 'contentclass_id' ),
             $q->bindValue( $content->typeId, null, \PDO::PARAM_INT )
@@ -67,6 +98,21 @@ class EzcDatabase extends Gateway
         )->set(
             $this->dbHandler->quoteColumn( 'owner_id' ),
             $q->bindValue( $content->ownerId, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'initial_language_id' ),
+            $q->bindValue( $content->initialLanguageId, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'remote_id' ),
+            $q->bindValue( $content->remoteId )
+        )->set(
+            $this->dbHandler->quoteColumn( 'language_mask' ),
+            $q->bindValue(
+                $this->generateLanguageMask(
+                    $content->version, $content->alwaysAvailable
+                ),
+                null,
+                \PDO::PARAM_INT
+            )
         );
 
         $stmt = $q->prepare();
@@ -76,12 +122,36 @@ class EzcDatabase extends Gateway
     }
 
     /**
+     * Generates a language mask for $version
+     *
+     * @param \ezp\Persistence\Content\Version $version
+     * @param bool $alwaysAvailable
+     * @return int
+     */
+    protected function generateLanguageMask( Version $version, $alwaysAvailable )
+    {
+        $languages = array_map(
+            function ( Field $field )
+            {
+                return $field->language;
+            },
+            $version->fields
+        );
+        if ( $alwaysAvailable )
+        {
+            $languages['always-available'] = true;
+        }
+        return $this->languageMaskGenerator->generateLanguageMask( $languages );
+    }
+
+    /**
      * Inserts a new version.
      *
      * @param Version $version
+     * @param bool $alwaysAvailable
      * @return int ID
      */
-    public function insertVersion( Version $version )
+    public function insertVersion( Version $version, $alwaysAvailable )
     {
         $q = $this->dbHandler->createInsertQuery();
         $q->insertInto(
@@ -100,10 +170,23 @@ class EzcDatabase extends Gateway
             $q->bindValue( $version->created, null, \PDO::PARAM_INT )
         )->set(
             $this->dbHandler->quoteColumn( 'status' ),
-            $q->bindValue( $version->state, null, \PDO::PARAM_INT )
+            $q->bindValue( $version->status, null, \PDO::PARAM_INT )
         )->set(
             $this->dbHandler->quoteColumn( 'contentobject_id' ),
             $q->bindValue( $version->contentId, null, \PDO::PARAM_INT )
+        )->set(
+            // As described in field mapping document
+            $this->dbHandler->quoteColumn( 'workflow_event_pos' ),
+            $q->bindValue( 0, null, \PDO::PARAM_INT )
+        )->set(
+            $this->dbHandler->quoteColumn( 'language_mask' ),
+            $q->bindValue(
+                $this->generateLanguageMask(
+                    $version, $alwaysAvailable
+                ),
+                null,
+                \PDO::PARAM_INT
+            )
         );
 
         $stmt = $q->prepare();
@@ -115,12 +198,11 @@ class EzcDatabase extends Gateway
     /**
      * Updates an existing version
      *
-     * @param int|string $version
+     * @param int $version
      * @param int $versionNo
-     * @param int|string $userId
      * @return void
      */
-    public function updateVersion( $version, $versionNo, $userId )
+    public function updateVersion( $version, $versionNo )
     {
         $q = $this->dbHandler->createUpdateQuery();
         $q->update(
@@ -131,16 +213,13 @@ class EzcDatabase extends Gateway
         )->set(
             $this->dbHandler->quoteColumn( 'modified' ),
             $q->bindValue( time(), null, \PDO::PARAM_INT )
-        )->set(
-            $this->dbHandler->quoteColumn( 'user_id' ),
-            $q->bindValue( $userId, null, \PDO::PARAM_INT )
-        )->where( $q->expr->eq(
-            $this->dbHandler->quoteColumn( 'id' ),
-            $q->bindValue( $version )
-        ) );
+        )->where(
+            $q->expr->eq(
+                $this->dbHandler->quoteColumn( 'id' ),
+                $q->bindValue( $version )
+            )
+        );
         $q->prepare()->execute();
-
-        return $this->dbHandler->lastInsertId();
     }
 
     /**
@@ -169,7 +248,6 @@ class EzcDatabase extends Gateway
             $this->dbHandler->quoteColumn( 'data_type_string' ),
             $q->bindValue( $field->type )
         )->set(
-            // @FIXME: Is language code correct?
             $this->dbHandler->quoteColumn( 'language_code' ),
             $q->bindValue( $field->language )
         )->set(
@@ -190,6 +268,16 @@ class EzcDatabase extends Gateway
         )->set(
             $this->dbHandler->quoteColumn( 'sort_key_string' ),
             $q->bindValue( $value->sortKeyString )
+        )->set(
+            $this->dbHandler->quoteColumn( 'language_id' ),
+            $q->bindValue(
+                $this->languageMaskGenerator->generateLanguageIndicator(
+                    $field->language,
+                    $content->alwaysAvailable
+                ),
+                null,
+                \PDO::PARAM_INT
+            )
         );
 
         $stmt = $q->prepare();
@@ -203,10 +291,13 @@ class EzcDatabase extends Gateway
      *
      * @param Field $field
      * @param StorageFieldValue $value
+     * @param bool $alwaysAvailable
      * @return void
      */
     public function updateField( Field $field, StorageFieldValue $value )
     {
+        // Note, no need to care for language_id here, since Content->$alwaysAvailable 
+        // cannot change on update
         $q = $this->dbHandler->createUpdateQuery();
         $q->update(
             $this->dbHandler->quoteTable( 'ezcontentobject_attribute' )
@@ -225,16 +316,18 @@ class EzcDatabase extends Gateway
         )->set(
             $this->dbHandler->quoteColumn( 'sort_key_string' ),
             $q->bindValue( $value->sortKeyString )
-        )->where( $q->expr->lAnd(
-            $q->expr->eq(
-                $this->dbHandler->quoteColumn( 'id' ),
-                $q->bindValue( $field->id )
-            ),
-            $q->expr->eq(
-                $this->dbHandler->quoteColumn( 'version' ),
-                $q->bindValue( $field->versionNo )
+        )->where(
+            $q->expr->lAnd(
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'id' ),
+                    $q->bindValue( $field->id )
+                ),
+                $q->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version' ),
+                    $q->bindValue( $field->versionNo )
+                )
             )
-        ) );
+        );
         $q->prepare()->execute();
     }
 
@@ -249,83 +342,19 @@ class EzcDatabase extends Gateway
      */
     public function load( $contentId, $version )
     {
-        $query = $this->dbHandler->createSelectQuery();
-        $query->select(
-                // Content object
-                $this->dbHandler->aliasedColumn( $query, 'id', 'ezcontentobject' ),
-                $this->dbHandler->aliasedColumn( $query, 'name', 'ezcontentobject' ),
-                $this->dbHandler->aliasedColumn( $query, 'contentclass_id', 'ezcontentobject' ),
-                $this->dbHandler->aliasedColumn( $query, 'section_id', 'ezcontentobject' ),
-                $this->dbHandler->aliasedColumn( $query, 'owner_id', 'ezcontentobject' ),
-                $this->dbHandler->aliasedColumn( $query, 'remote_id', 'ezcontentobject' ),
-                // Content object version
-                $this->dbHandler->aliasedColumn( $query, 'id', 'ezcontentobject_version' ),
-                $this->dbHandler->aliasedColumn( $query, 'version', 'ezcontentobject_version' ),
-                $this->dbHandler->aliasedColumn( $query, 'modified', 'ezcontentobject_version' ),
-                $this->dbHandler->aliasedColumn( $query, 'creator_id', 'ezcontentobject_version' ),
-                $this->dbHandler->aliasedColumn( $query, 'created', 'ezcontentobject_version' ),
-                $this->dbHandler->aliasedColumn( $query, 'status', 'ezcontentobject_version' ),
-                $this->dbHandler->aliasedColumn( $query, 'contentobject_id', 'ezcontentobject_version' ),
-                $this->dbHandler->aliasedColumn( $query, 'language_mask', 'ezcontentobject_version' ),
-                // Content object fields
-                $this->dbHandler->aliasedColumn( $query, 'id', 'ezcontentobject_attribute' ),
-                $this->dbHandler->aliasedColumn( $query, 'contentclassattribute_id', 'ezcontentobject_attribute' ),
-                $this->dbHandler->aliasedColumn( $query, 'data_type_string', 'ezcontentobject_attribute' ),
-                $this->dbHandler->aliasedColumn( $query, 'language_code', 'ezcontentobject_attribute' ),
-                $this->dbHandler->aliasedColumn( $query, 'version', 'ezcontentobject_attribute' ),
-                // Content object field data
-                $this->dbHandler->aliasedColumn( $query, 'data_float', 'ezcontentobject_attribute' ),
-                $this->dbHandler->aliasedColumn( $query, 'data_int', 'ezcontentobject_attribute' ),
-                $this->dbHandler->aliasedColumn( $query, 'data_text', 'ezcontentobject_attribute' ),
-                $this->dbHandler->aliasedColumn( $query, 'sort_key_int', 'ezcontentobject_attribute' ),
-                $this->dbHandler->aliasedColumn( $query, 'sort_key_string', 'ezcontentobject_attribute' ),
-                // Content object locations
-                $this->dbHandler->aliasedColumn( $query, 'node_id', 'ezcontentobject_tree' )
-            )
-            ->from( $this->dbHandler->quoteTable( 'ezcontentobject' ) )
-            ->leftJoin(
-                $this->dbHandler->quoteTable( 'ezcontentobject_version' ),
-                $query->expr->lAnd(
-                    $query->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentobject_id', 'ezcontentobject_version' ),
-                        $this->dbHandler->quoteColumn( 'id', 'ezcontentobject' )
-                    ),
-                    $query->expr->eq(
-                        $this->dbHandler->quoteColumn( 'version', 'ezcontentobject_version' ),
-                        $query->bindValue( $version )
-                    )
+        $query = $this->queryBuilder->createFindQuery();
+        $query->where(
+            $query->expr->lAnd(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'id', 'ezcontentobject' ),
+                    $query->bindValue( $contentId )
+                ),
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version', 'ezcontentobject_version' ),
+                    $query->bindValue( $version )
                 )
             )
-            ->leftJoin(
-                $this->dbHandler->quoteTable( 'ezcontentobject_attribute' ),
-                $query->expr->lAnd(
-                    $query->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentobject_id', 'ezcontentobject_attribute' ),
-                        $this->dbHandler->quoteColumn( 'contentobject_id', 'ezcontentobject_version' )
-                    ),
-                    $query->expr->eq(
-                        $this->dbHandler->quoteColumn( 'version', 'ezcontentobject_attribute' ),
-                        $this->dbHandler->quoteColumn( 'version', 'ezcontentobject_version' )
-                    )
-                )
-            )
-            ->leftJoin(
-                $this->dbHandler->quoteTable( 'ezcontentobject_tree' ),
-                $query->expr->lAnd(
-                    $query->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentobject_id', 'ezcontentobject_tree' ),
-                        $this->dbHandler->quoteColumn( 'contentobject_id', 'ezcontentobject_version' )
-                    ),
-                    $query->expr->eq(
-                        $this->dbHandler->quoteColumn( 'contentobject_version', 'ezcontentobject_tree' ),
-                        $this->dbHandler->quoteColumn( 'version', 'ezcontentobject_version' )
-                    )
-                )
-            )
-            ->where( $query->expr->eq(
-                $this->dbHandler->quoteColumn( 'id', 'ezcontentobject' ),
-                $query->bindValue( $contentId )
-            ) );
+        );
         $statement = $query->prepare();
         $statement->execute();
 
@@ -336,5 +365,260 @@ class EzcDatabase extends Gateway
         }
 
         return $rows;
+    }
+
+    /**
+     * Returns all version data for the given $contentId
+     *
+     * @param mixed $contentId
+     * @return string[][]
+     */
+    public function listVersions( $contentId )
+    {
+        $query = $this->dbHandler->createSelectQuery();
+        $query->select(
+            $this->dbHandler->aliasedColumn( $query, 'id', 'ezcontentobject_version' ),
+            $this->dbHandler->aliasedColumn( $query, 'version', 'ezcontentobject_version' ),
+            $this->dbHandler->aliasedColumn( $query, 'modified', 'ezcontentobject_version' ),
+            $this->dbHandler->aliasedColumn( $query, 'creator_id', 'ezcontentobject_version' ),
+            $this->dbHandler->aliasedColumn( $query, 'created', 'ezcontentobject_version' ),
+            $this->dbHandler->aliasedColumn( $query, 'status', 'ezcontentobject_version' ),
+            $this->dbHandler->aliasedColumn( $query, 'contentobject_id', 'ezcontentobject_version' ),
+            $this->dbHandler->aliasedColumn( $query, 'language_mask', 'ezcontentobject_version' ),
+            // Language IDs
+            $this->dbHandler->aliasedColumn( $query, 'language_code', 'ezcontentobject_attribute' )
+        )->from(
+            $this->dbHandler->quoteTable( 'ezcontentobject_version' )
+        )->leftJoin(
+            $this->dbHandler->quoteTable( 'ezcontentobject_attribute' ),
+            $query->expr->lAnd(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentobject_id', 'ezcontentobject_version' ),
+                    $this->dbHandler->quoteColumn( 'contentobject_id', 'ezcontentobject_attribute' )
+                ),
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version', 'ezcontentobject_version' ),
+                    $this->dbHandler->quoteColumn( 'version', 'ezcontentobject_attribute' )
+                )
+            )
+        )->where(
+            $query->expr->eq(
+                $this->dbHandler->quoteColumn( 'contentobject_id', 'ezcontentobject_version' ),
+                $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+            )
+        )->groupBy(
+            $this->dbHandler->quoteColumn( 'id', 'ezcontentobject_version' ),
+            $this->dbHandler->quoteColumn( 'language_code', 'ezcontentobject_attribute' )
+        );
+
+        $statement = $query->prepare();
+        $statement->execute();
+
+        return $statement->fetchAll( \PDO::FETCH_ASSOC );
+    }
+
+    /**
+     * Returns all IDs for locations that refer to $contentId
+     *
+     * @param int $contentId
+     * @return int[]
+     * @TODO This method does hardly belong here. Maybe put it into 
+     *       Location\Handler? But that hinders inter-operability.
+     */
+    public function getAllLocationIds( $contentId )
+    {
+        $query = $this->dbHandler->createSelectQuery();
+        $query->select(
+            $this->dbHandler->quoteColumn( 'node_id' )
+        )->from(
+            $this->dbHandler->quoteTable( 'ezcontentobject_tree' )
+        )->where(
+            $query->expr->eq(
+                $this->dbHandler->quoteColumn( 'contentobject_id' ),
+                $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+            )
+        );
+
+        $statement = $query->prepare();
+        $statement->execute();
+
+        return $statement->fetchAll( \PDO::FETCH_COLUMN );
+    }
+
+    /**
+     * Returns all field IDs of $contentId grouped by their type
+     *
+     * @param int $contentId
+     * @return int[][]
+     */
+    public function getFieldIdsByType( $contentId )
+    {
+        $query = $this->dbHandler->createSelectQuery();
+        $query->select(
+            $this->dbHandler->quoteColumn( 'id' ),
+            $this->dbHandler->quoteColumn( 'data_type_string' )
+        )->from(
+            $this->dbHandler->quoteTable( 'ezcontentobject_attribute' )
+        )->where(
+            $query->expr->eq(
+                $this->dbHandler->quoteColumn( 'contentobject_id' ),
+                $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+            )
+        );
+
+        $statement = $query->prepare();
+        $statement->execute();
+
+        $result = array();
+        foreach ( $statement->fetchAll() as $row )
+        {
+            if ( !isset( $result[$row['data_type_string']] ) )
+            {
+                $result[$row['data_type_string']] = array();
+            }
+            $result[$row['data_type_string']][] = (int)$row['id'];
+        }
+        return $result;
+    }
+
+    /**
+     * Deletes relations to and from $contentId
+     *
+     * @param int $contentId
+     * @return void
+     */
+    public function deleteRelations( $contentId )
+    {
+        $query = $this->dbHandler->createDeleteQuery();
+        $query->deleteFrom(
+            $this->dbHandler->quoteTable( 'ezcontentobject_link' )
+        )->where(
+            $query->expr->lOr(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'from_contentobject_id' ),
+                    $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+                ),
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'to_contentobject_id' ),
+                    $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+                )
+            )
+        );
+
+        $statement = $query->prepare();
+        $statement->execute();
+    }
+
+    /**
+     * Deletes the field with the given $fieldId
+     *
+     * @param int $fieldId
+     * @param int $version
+     * @return void
+     */
+    public function deleteField( $fieldId, $version )
+    {
+        $query = $this->dbHandler->createDeleteQuery();
+        $query->deleteFrom(
+            $this->dbHandler->quoteTable( 'ezcontentobject_attribute' )
+        )->where(
+            $query->expr->lAnd(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'id' ),
+                    $query->bindValue( $fieldId, null, \PDO::PARAM_INT )
+                ),
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'version' ),
+                    $query->bindValue( $version, null, \PDO::PARAM_INT )
+                )
+            )
+        );
+
+        $statement = $query->prepare();
+        $statement->execute();
+    }
+
+    /**
+     * Deletes all fields of $contentId in all versions
+     *
+     * @param int $contentId
+     * @return void
+     */
+    public function deleteFields( $contentId )
+    {
+        $query = $this->dbHandler->createDeleteQuery();
+        $query->deleteFrom( 'ezcontentobject_attribute' )
+            ->where(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentobject_id' ),
+                    $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+                )
+            );
+
+        $statement = $query->prepare();
+        $statement->execute();
+    }
+
+    /**
+     * Deletes all versions of $contentId
+     *
+     * @param int $contentId
+     * @return void
+     */
+    public function deleteVersions( $contentId )
+    {
+        $query = $this->dbHandler->createDeleteQuery();
+        $query->deleteFrom( 'ezcontentobject_version' )
+            ->where(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentobject_id' ),
+                    $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+                )
+            );
+
+        $statement = $query->prepare();
+        $statement->execute();
+    }
+
+    /**
+     * Deletes all names of $contentId
+     *
+     * @param int $contentId
+     * @return void
+     */
+    public function deleteNames( $contentId )
+    {
+        $query = $this->dbHandler->createDeleteQuery();
+        $query->deleteFrom( 'ezcontentobject_name' )
+            ->where(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'contentobject_id' ),
+                    $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+                )
+            );
+
+        $statement = $query->prepare();
+        $statement->execute();
+    }
+
+    /**
+     * Deletes the actual content object referred to by $contentId
+     *
+     * @param int $contentId
+     * @return void
+     */
+    public function deleteContent( $contentId )
+    {
+        $query = $this->dbHandler->createDeleteQuery();
+        $query->deleteFrom( 'ezcontentobject' )
+            ->where(
+                $query->expr->eq(
+                    $this->dbHandler->quoteColumn( 'id' ),
+                    $query->bindValue( $contentId, null, \PDO::PARAM_INT )
+                )
+            );
+
+        $statement = $query->prepare();
+        $statement->execute();
     }
 }

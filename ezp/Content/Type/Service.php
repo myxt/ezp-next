@@ -11,6 +11,8 @@ namespace ezp\Content\Type;
 use ezp\Base\Service as BaseService,
     ezp\Base\Exception\NotFound,
     ezp\Base\Exception\InvalidArgumentType,
+    ezp\Base\Exception\Logic,
+    ezp\Base\Exception\PropertyNotFound,
     ezp\Base\Collection\LazyIdList,
     ezp\Base\Collection\Lazy,
     ezp\Base\Collection\Type as TypeCollection,
@@ -44,35 +46,8 @@ class Service extends BaseService
     {
         $struct = new GroupCreateStruct();
         $this->fillStruct( $struct, $group );
-        $vo = $this->handler->contentTypeHandler()->createGroup( $struct  );
+        $vo = $this->handler->contentTypeHandler()->createGroup( $struct );
         return $this->buildGroup( $vo );
-    }
-
-    /**
-     * Update a Content Type Group object
-     *
-     * @param \ezp\Content\Type\Group $group
-     * @throws \ezp\Base\Exception\PropertyNotFound If property is missing or has a value of null
-     * @throws \ezp\Base\Exception\NotFound If object can not be found
-     */
-    public function updateGroup( Group $group )
-    {
-        $struct = new GroupUpdateStruct();
-        $this->fillStruct( $struct, $group );
-        $this->handler->contentTypeHandler()->updateGroup( $struct  );
-    }
-
-    /**
-     * Update a Content Type Group object
-     *
-     * @param mixed $groupId
-     * @throws \ezp\Base\Exception\NotFound If object can not be found
-     */
-    public function deleteGroup( $groupId )
-    {
-        if ( $do = $this->storage->get( 'ezp\\Content\\Type\\Group', array( 'id' => $groupId ) ) )
-            $this->storage->remove( $do );
-        $this->handler->contentTypeHandler()->deleteGroup( $groupId  );
     }
 
     /**
@@ -112,50 +87,67 @@ class Service extends BaseService
     }
 
     /**
-     * Create a Content Type object
+     * Update a Content Type Group object
      *
-     * @param \ezp\Content\Type $type
-     * @return \ezp\Content\Type
+     * @param \ezp\Content\Type\Group $group
      * @throws \ezp\Base\Exception\PropertyNotFound If property is missing or has a value of null
+     * @throws \ezp\Base\Exception\NotFound If object can not be found
      */
-    public function create( Type $type )
+    public function updateGroup( Group $group )
     {
-        $struct = new CreateStruct();
-        $this->fillStruct( $struct, $type, array( 'fieldDefinitions' ) );
-        foreach ( $type->fields as $field )
-        {
-            $struct->fieldDefinitions[] = $field->getState( 'properties' );
-        }
-        $vo = $this->handler->contentTypeHandler()->create( $struct  );
-        return $this->buildType( $vo );
+        $struct = new GroupUpdateStruct();
+        $this->fillStruct( $struct, $group );
+        $this->handler->contentTypeHandler()->updateGroup( $struct );
     }
 
     /**
      * Update a Content Type Group object
      *
-     * @param \ezp\Content\Type $type
-     * @throws \ezp\Base\Exception\PropertyNotFound If property is missing or has a value of null
+     * @param \ezp\Content\Type\Group $group
      * @throws \ezp\Base\Exception\NotFound If object can not be found
      */
-    public function update( Type $type )
+    public function deleteGroup( Group $group )
     {
-        $struct = new UpdateStruct();
-        $this->fillStruct( $struct, $type );
-        $this->handler->contentTypeHandler()->update( $type->id, $type->status, $struct  );
+        $this->storage->remove( $group );
+        $this->handler->contentTypeHandler()->deleteGroup( $group->id );
     }
 
     /**
-     * Delete a Content Type object
+     * Create a Content Type object
      *
-     * @param int $typeId
-     * @param int $status
-     * @throws \ezp\Base\Exception\NotFound If object can not be found
+     * @param \ezp\Content\Type $type
+     * @return \ezp\Content\Type
+     * @throws \ezp\Base\Exception\PropertyNotFound If property is missing or has a empty value
+     * @throws \ezp\Base\Exception\Logic If a group is _not_ persisted, or if type / fields is
      */
-    public function delete( $typeId, $status = TypeValue::STATUS_DEFINED )
+    public function create( Type $type )
     {
-        if ( $do = $this->storage->get( 'ezp\\Content\\Type', array( 'id' => $typeId, 'status' => $status ) ) )
-            $this->storage->remove( $do );
-        $this->handler->contentTypeHandler()->delete( $typeId, $status );
+        if ( $type->id )
+            throw new Logic( "Type\\Service->create()", '$type seems to already be persisted' );
+
+        $struct = new CreateStruct();
+        $this->fillStruct( $struct, $type, array( 'fieldDefinitions', 'groupIds' ) );
+        foreach ( $type->fields as $field )
+        {
+            if ( $field->id )
+                throw new Logic( "Type\\Service->create()", '->fields can not already be persisted' );
+
+            $struct->fieldDefinitions[] = $field->getState( 'properties' );
+        }
+
+        if ( !isset( $type->groups[0] ) )
+            throw new PropertyNotFound( 'groups', get_class( $type ) );
+
+        // @todo Remove this if api is introduced on Type to add / remove fields / groups (but still verify values)
+        foreach ( $type->groups as $group )
+        {
+            if ( !$group->id )
+                throw new Logic( "Type\\Service->create()", '->groups needs to be persisted before adding it to type' );
+
+            $struct->groupIds[] = $group->id;
+        }
+        $vo = $this->handler->contentTypeHandler()->create( $struct );
+        return $this->buildType( $vo );
     }
 
     /**
@@ -207,6 +199,32 @@ class Service extends BaseService
     }
 
     /**
+     * Update a Content Type Group object
+     *
+     * @param \ezp\Content\Type $type
+     * @throws \ezp\Base\Exception\PropertyNotFound If property is missing or has a value of null
+     * @throws \ezp\Base\Exception\NotFound If object can not be found
+     */
+    public function update( Type $type )
+    {
+        $struct = new UpdateStruct();
+        $this->fillStruct( $struct, $type );
+        $this->handler->contentTypeHandler()->update( $type->id, $type->status, $struct );
+    }
+
+    /**
+     * Delete a Content Type object
+     *
+     * @param \ezp\Content\Type $type
+     * @throws \ezp\Base\Exception\NotFound If object can not be found
+     */
+    public function delete( Type $type )
+    {
+        $this->storage->remove( $type );
+        $this->handler->contentTypeHandler()->delete( $type->id, $type->status );
+    }
+
+    /**
      * Copy Type incl fields and groupIds from a given status to a new Type with status {@link TypeValue::STATUS_DRAFT}
      *
      * New Type will have $userId as creator / modifier, created / modified should be updated with current time,
@@ -234,14 +252,8 @@ class Service extends BaseService
     public function unlink( Type $type, Group $group )
     {
         $this->handler->contentTypeHandler()->unlink( $group->id, $type->id, $type->status );
-        foreach ( $type->groupIds as $key => $value )
-        {
-            if ( $value === $group->id )
-            {
-                //$type->groups->offsetUnset( $key ); does not work
-                break;
-            }
-        }
+        $type->groups->remove( $group );
+        $type->getState( 'properties' )->groupIds = array_diff( $type->groupIds, array( $group->id ) );
     }
 
     /**
@@ -271,12 +283,13 @@ class Service extends BaseService
         if ( $field->id )
             throw new InvalidArgumentType( '$field->id', 'false' );
 
-        $this->handler->contentTypeHandler()->addFieldDefinition(
+        $vo = $this->handler->contentTypeHandler()->addFieldDefinition(
             $type->id,
             $type->status,
             $field->getState( "properties" )
         );
         $type->fields[] = $field;
+        $type->getState( 'properties' )->fieldDefinitions[] = $vo;
     }
 
     /**
@@ -293,6 +306,8 @@ class Service extends BaseService
             $type->status,
             $field->id
         );
+        $index = $type->fields->remove( $field );
+        unset( $type->getState( 'properties' )->fieldDefinitions[$index] );
     }
 
     /**

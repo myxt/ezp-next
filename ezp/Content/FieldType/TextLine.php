@@ -10,7 +10,8 @@
 namespace ezp\Content\FieldType;
 use ezp\Content\FieldType,
     ezp\Base\Exception\BadFieldTypeInput,
-    ezp\Persistence\Content\FieldValue;
+    ezp\Persistence\Content\FieldValue,
+    ezp\Content\Type\FieldDefinition;
 
 /**
  * The TextLine field type.
@@ -22,9 +23,8 @@ class TextLine extends FieldType
     protected $fieldTypeString = 'ezstring';
     protected $defaultValue = '';
     protected $isSearchable = true;
-    protected $isTranslateable = true;
 
-    protected $allowedValidators = array( 'StringValidator' => array( 'maxStringLength' => null ) );
+    protected $allowedValidators = array( 'StringLengthValidator' );
 
     public function __construct()
     {
@@ -79,7 +79,7 @@ class TextLine extends FieldType
      */
     public function setFieldValue( FieldValue $valueStruct )
     {
-        $valueStruct->data = $this->getFieldTypeSettings() + $this->getValueData();
+        $valueStruct->data = $this->getValueData();
         $valueStruct->sortKey = $this->getSortInfo();
     }
 
@@ -95,17 +95,6 @@ class TextLine extends FieldType
     }
 
     /**
-     * Returns stored validation data in format suitable for packing it in a
-     * FieldValue
-     *
-     * @return array
-     */
-    protected function getValidationData()
-    {
-        return array();
-    }
-
-    /**
      * Returns the value of the field type in a format suitable for packing it
      * in a FieldValue.
      *
@@ -115,5 +104,4 @@ class TextLine extends FieldType
     {
         return array( 'value' => $this->value );
     }
-
 }

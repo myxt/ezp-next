@@ -20,6 +20,13 @@ class Content extends ValueObject
     public $id;
 
     /**
+     * One of Content::STATUS_DRAFT, Content::STATUS_PUBLISHED, Content::STATUS_ARCHIVED
+     *
+     * @var int Constant.
+     */
+    public $status;
+
+    /**
      * @var string[]
      */
     public $name;
@@ -57,7 +64,7 @@ class Content extends ValueObject
      *
      * The Version, containing version information and all
      * {@link \ezp\Persistence\Content\Field}s in this version (in all languages).
-     * Non-translateable fields will only occur once!
+     * Non-translatable fields will only occur once!
      *
      * @var \ezp\Persistence\Content\Version
      */
@@ -77,5 +84,12 @@ class Content extends ValueObject
      * @var string Remote identifier used as a custom identifier for the object
      */
     public $remoteId;
+
+    /**
+     * TODO: Document
+     *
+     * @var mixed
+     */
+    public $initialLanguageId;
 }
 ?>

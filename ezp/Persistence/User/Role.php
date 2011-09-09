@@ -15,13 +15,6 @@ use ezp\Persistence\ValueObject;
 class Role extends ValueObject
 {
     /**
-     * Name of the role
-     *
-     * @var string
-     */
-    public $name;
-
-    /**
      * ID of the user rule
      *
      * @var mixed
@@ -29,10 +22,24 @@ class Role extends ValueObject
     public $id;
 
     /**
+     * Name of the role
+     *
+     * @var string
+     */
+    public $name;
+
+    /**
      * Policies associated with the role
      *
      * @var Policy[]
      */
     public $policies = array();
+
+    /**
+     * Contains an array of group IDs that has this role assigned.
+     *
+     * @var mixed[] In current implementation, id's are contentId's
+     */
+    public $groupIds = array();
 }
 ?>

@@ -8,7 +8,8 @@
  */
 
 namespace ezp\Persistence\Content;
-use ezp\Persistence\ValueObject;
+use ezp\Persistence\ValueObject,
+    ezp\Persistence\Content\Location;
 
 /**
  * @todo What about sort_field and sort_order?
@@ -140,6 +141,24 @@ class Type extends ValueObject
     public $initialLanguageId;
 
     /**
+     * Specifies which property the child locations should be sorted on by default when created
+     *
+     * Valid values are found at {@link Location::SORT_FIELD_*}
+     *
+     * @var mixed
+     */
+    public $sortField = Location::SORT_FIELD_PUBLISHED;
+
+    /**
+     * Specifies whether the sort order should be ascending or descending by default when created
+     *
+     * Valid values are {@link Location::SORT_ORDER_*}
+     *
+     * @var mixed
+     */
+    public $sortOrder = Location::SORT_ORDER_DESC;
+
+    /**
      * Contains an array of type group IDs
      *
      * @var mixed[]
@@ -152,5 +171,12 @@ class Type extends ValueObject
      * @var \ezp\Persistence\Content\Type\FieldDefinition[]
      */
     public $fieldDefinitions = array();
+
+    /**
+     * TODO: Document.
+     *
+     * @var bool
+     */
+    public $defaultAlwaysAvailable = false;
 }
 ?>

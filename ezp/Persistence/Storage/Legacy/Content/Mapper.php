@@ -12,7 +12,10 @@ namespace ezp\Persistence\Storage\Legacy\Content;
 use ezp\Persistence\Content,
     ezp\Persistence\Content\CreateStruct,
     ezp\Persistence\Content\Field,
+    ezp\Persistence\Content\FieldValue,
     ezp\Persistence\Content\Version,
+    ezp\Persistence\Content\RestrictedVersion,
+    ezp\Persistence\Storage\Legacy\Content\Location\Mapper as LocationMapper,
     ezp\Persistence\Storage\Legacy\Content\FieldValue\Converter\Registry;
 
 /**
@@ -28,13 +31,21 @@ class Mapper
     protected $converterRegistry;
 
     /**
+     * Location mapper
+     *
+     * @var \ezp\Persistence\Storage\Persistence\Converter\Location\Mapper
+     */
+    protected $locationMapper;
+
+    /**
      * Creates a new mapper.
      *
      * @param \ezp\Persistence\Storage\Legacy\Content\FieldValue\Converter\Registry $converterRegistry
      */
-    public function __construct( Registry $converterRegistry )
+    public function __construct( LocationMapper $locationMapper, Registry $converterRegistry )
     {
         $this->converterRegistry = $converterRegistry;
+        $this->locationMapper = $locationMapper;
     }
 
     /**
@@ -47,26 +58,26 @@ class Mapper
     {
         $content = new Content();
 
-        $content->name         = $struct->name;
-        $content->typeId       = $struct->typeId;
-        $content->sectionId    = $struct->sectionId;
-        $content->ownerId      = $struct->ownerId;
+        $content->name = $struct->name;
+        $content->typeId = $struct->typeId;
+        $content->sectionId = $struct->sectionId;
+        $content->ownerId = $struct->ownerId;
 
         return $content;
     }
 
     /**
-     * Creates a Content from the given $struct
+     * Creates a Location\CreateStruct for the given $content
      *
-     * @param \ezp\Persistence\Content\CreateStruct $struct
-     * @return Content
+     * @param \ezp\Persistence\Content $content
+     * @return Content\Location\CreateStruct
      */
-    public function createLocationCreateStruct( Content $content, CreateStruct $struct )
+    public function createLocationCreateStruct( Content $content )
     {
         $location = new Content\Location\CreateStruct();
 
-        $location->remoteId       = md5( uniqid() );
-        $location->contentId      = $content->id;
+        $location->remoteId = md5( uniqid() );
+        $location->contentId = $content->id;
         $location->contentVersion = $content->version->id;
 
         return $location;
@@ -85,11 +96,11 @@ class Mapper
         $version = new Version();
 
         $version->versionNo = $versionNo;
-        $version->created   = time();
-        $version->modified  = $version->created;
+        $version->created = time();
+        $version->modified = $version->created;
         $version->creatorId = $content->ownerId;
         // @todo: Is draft version correct?
-        $version->state     = 0;
+        $version->status = 0;
         $version->contentId = $content->id;
 
         return $version;
@@ -106,9 +117,12 @@ class Mapper
         $converter = $this->converterRegistry->getConverter(
             $field->type
         );
-        return $converter->toStorage(
-            $field->value
+        $storageValue = new StorageFieldValue();
+        $converter->toStorageValue(
+            $field->value,
+            $storageValue
         );
+        return $storageValue;
     }
 
     /**
@@ -124,36 +138,69 @@ class Mapper
     public function extractContentFromRows( array $rows )
     {
         $contentObjs = array();
+        $versions    = array();
+        $locations   = array();
 
         foreach ( $rows as $row )
         {
-            $contentId = (int) $row['ezcontentobject_id'];
+            $contentId = (int)$row['ezcontentobject_id'];
             if ( !isset( $contentObjs[$contentId] ) )
             {
-                $contentObjs[$contentId]  = $this->extractContentFromRow( $row );
+                $contentObjs[$contentId] = $this->extractContentFromRow( $row );
             }
-
             if ( !isset( $versions[$contentId] ) )
             {
-                $versions[$contentId] = $this->extractVersionFromRow( $row );
+                $versions[$contentId] = array();
             }
-
-            $field = (int) $row['ezcontentobject_attribute_id'];
-            if ( !isset( $versions[$contentId]->fields[$field] ) )
+            if ( !isset( $locations[$contentId] ) )
             {
-                $versions[$contentId]->fields[$field] = $this->extractFieldFromRow( $row );
+                $locations[$contentId] = array();
             }
 
-            $contentObjs[$contentId]->locations[(int) $row['ezcontentobject_tree_node_id']] = true;
+            $versionId = (int)$row['ezcontentobject_version_id'];
+            if ( !isset( $versions[$contentId][$versionId] ) )
+            {
+                $versions[$contentId][$versionId]
+                    = $this->extractVersionFromRow( $row );
+            }
+            if ( !isset( $locations[$contentId][$versionId] ) )
+            {
+                $locations[$contentId][$versionId] = array();
+            }
+
+            $field = (int)$row['ezcontentobject_attribute_id'];
+            if ( !isset( $versions[$contentId][$versionId]->fields[$field] ) )
+            {
+                $versions[$contentId][$versionId]->fields[$field]
+                    = $this->extractFieldFromRow( $row );
+            }
+
+            $locationId = (int)$row['ezcontentobject_tree_node_id'];
+            if ( !isset( $locations[$contentId][$versionId][$locationId] ) )
+            {
+                $locations[$contentId][$versionId][$locationId] =
+                    $this->locationMapper->createLocationFromRow(
+                        $row, 'ezcontentobject_tree_'
+                    );
+            }
         }
 
-        foreach ( $contentObjs as $content )
+        $results = array();
+        foreach ( $contentObjs as $contentId => $content )
         {
-            $content->version         = $versions[$content->id];
-            $content->version->fields = array_values( $content->version->fields );
-            $content->locations       = array_keys( $content->locations );
+            foreach ( $versions[$contentId] as $versionId => $version )
+            {
+                $version->fields = array_values( $version->fields );
+
+                $newContent = clone $content;
+                $newContent->version = $version;
+                $newContent->locations = array_values(
+                    $locations[$contentId][$versionId]
+                );
+                $results[] = $newContent;
+            }
         }
-        return array_values( $contentObjs );
+        return $results;
     }
 
     /**
@@ -166,14 +213,14 @@ class Mapper
     {
         $content = new Content();
 
-        $content->id              = (int) $row['ezcontentobject_id'];
-        $content->name            = $row['ezcontentobject_name'];
-        $content->typeId          = (int) $row['ezcontentobject_contentclass_id'];
-        $content->sectionId       = (int) $row['ezcontentobject_section_id'];
-        $content->ownerId         = (int) $row['ezcontentobject_owner_id'];
-        $content->remoteId        = $row['ezcontentobject_remote_id'];
-        $content->alwaysAvailable = (bool) ( $row['ezcontentobject_version_language_mask'] & 1 );
-        $content->locations       = array();
+        $content->id = (int)$row['ezcontentobject_id'];
+        $content->name = $row['ezcontentobject_name'];
+        $content->typeId = (int)$row['ezcontentobject_contentclass_id'];
+        $content->sectionId = (int)$row['ezcontentobject_section_id'];
+        $content->ownerId = (int)$row['ezcontentobject_owner_id'];
+        $content->remoteId = $row['ezcontentobject_remote_id'];
+        $content->alwaysAvailable = (bool)( $row['ezcontentobject_version_language_mask'] & 1 );
+        $content->locations = array();
 
         return $content;
     }
@@ -187,17 +234,28 @@ class Mapper
     protected function extractVersionFromRow( array $row )
     {
         $version = new Version();
-
-        $version->id        = (int) $row['ezcontentobject_version_id'];
-        $version->versionNo = (int) $row['ezcontentobject_version_version'];
-        $version->modified  = (int) $row['ezcontentobject_version_modified'];
-        $version->creatorId = (int) $row['ezcontentobject_version_creator_id'];
-        $version->created   = (int) $row['ezcontentobject_version_created'];
-        $version->state     = (int) $row['ezcontentobject_version_status'];
-        $version->contentId = (int) $row['ezcontentobject_version_contentobject_id'];
-        $version->fields    = array();
+        $this->mapCommonVersionFields( $row, $version );
+        $version->fields = array();
 
         return $version;
+    }
+
+    /**
+     * Maps fields from $row to $version
+     *
+     * @param array $row
+     * @param Version|RestrictedVersion $version
+     * @return void
+     */
+    protected function mapCommonVersionFields( array $row, $version )
+    {
+        $version->id = (int)$row['ezcontentobject_version_id'];
+        $version->versionNo = (int)$row['ezcontentobject_version_version'];
+        $version->modified = (int)$row['ezcontentobject_version_modified'];
+        $version->creatorId = (int)$row['ezcontentobject_version_creator_id'];
+        $version->created = (int)$row['ezcontentobject_version_created'];
+        $version->status = (int)$row['ezcontentobject_version_status'];
+        $version->contentId = (int)$row['ezcontentobject_version_contentobject_id'];
     }
 
     /**
@@ -210,12 +268,12 @@ class Mapper
     {
         $field = new Field();
 
-        $field->id                = (int) $row['ezcontentobject_attribute_id'];
-        $field->fieldDefinitionId = (int) $row['ezcontentobject_attribute_contentclassattribute_id'];
-        $field->type              = $row['ezcontentobject_attribute_data_type_string'];
-        $field->value             = $this->extractFieldValueFromRow( $row, $field->type );
-        $field->language          = $row['ezcontentobject_attribute_language_code'];
-        $field->versionNo         = (int) $row['ezcontentobject_attribute_version'];
+        $field->id = (int)$row['ezcontentobject_attribute_id'];
+        $field->fieldDefinitionId = (int)$row['ezcontentobject_attribute_contentclassattribute_id'];
+        $field->type = $row['ezcontentobject_attribute_data_type_string'];
+        $field->value = $this->extractFieldValueFromRow( $row, $field->type );
+        $field->language = $row['ezcontentobject_attribute_language_code'];
+        $field->versionNo = (int)$row['ezcontentobject_attribute_version'];
 
         return $field;
     }
@@ -233,13 +291,53 @@ class Mapper
     {
         $storageValue = new StorageFieldValue();
 
-        $storageValue->dataFloat     = (float) $row['ezcontentobject_attribute_data_float'];
-        $storageValue->dataInt       = (int) $row['ezcontentobject_attribute_data_int'];
-        $storageValue->dataText      = $row['ezcontentobject_attribute_data_text'];
-        $storageValue->sortKeyInt    = (int) $row['ezcontentobject_attribute_sort_key_int'];
+        $storageValue->dataFloat = (float)$row['ezcontentobject_attribute_data_float'];
+        $storageValue->dataInt = (int)$row['ezcontentobject_attribute_data_int'];
+        $storageValue->dataText = $row['ezcontentobject_attribute_data_text'];
+        $storageValue->sortKeyInt = (int)$row['ezcontentobject_attribute_sort_key_int'];
         $storageValue->sortKeyString = $row['ezcontentobject_attribute_sort_key_string'];
 
+        $fieldValue = new FieldValue();
+
         $converter = $this->converterRegistry->getConverter( $type );
-        return $converter->toFieldValue( $storageValue );
+        $converter->toFieldValue( $storageValue, $fieldValue );
+
+        return $fieldValue;
+    }
+
+    /**
+     * Extracts a list of RestrictedVersion objects from $rows
+     *
+     * @param string[][] $rows
+     * @return RestrictedVersion[]
+     * @todo This method works on language codes for now.
+     */
+    public function extractVersionListFromRows( array $rows )
+    {
+        $versionList = array();
+        foreach ( $rows as $row )
+        {
+            $versionId = (int)$row['ezcontentobject_version_id'];
+            if ( !isset( $versionList[$versionId] ) )
+            {
+                $version = new RestrictedVersion();
+                $this->mapCommonVersionFields( $row, $version );
+                $version->languageIds = array();
+
+                $versionList[$versionId] = $version;
+            }
+
+            if (
+                !in_array(
+                    $row['ezcontentobject_attribute_language_code'],
+                    $versionList[$versionId]->languageIds
+                )
+            )
+            {
+                $versionList[$versionId]->languageIds[] =
+                    $row['ezcontentobject_attribute_language_code'];
+            }
+        }
+        return array_values( $versionList );
     }
 }

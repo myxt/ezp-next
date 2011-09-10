@@ -349,7 +349,7 @@ class Service extends BaseService
                 )
             )
         );
-        $this->storage->add( $type, array( 'id' => $vo->id, 'status' => $vo->status ) );
+        $this->storage->add( $type );
         return $type;
     }
 
@@ -371,7 +371,7 @@ class Service extends BaseService
                 )
             )
         );
-        $this->storage->add( $group, array( 'id' => $vo->id ) );
+        $this->storage->add( $group );
         return $group;
     }
 }

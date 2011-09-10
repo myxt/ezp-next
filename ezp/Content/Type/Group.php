@@ -9,6 +9,7 @@
 
 namespace ezp\Content\Type;
 use ezp\Base\Model,
+    ezp\Base\ModelDefinition,
     ezp\Base\Collection\Type as TypeCollection,
     ezp\Persistence\Content\Type\Group as GroupValue;
 
@@ -26,7 +27,7 @@ use ezp\Base\Model,
  * @property mixed $modifierId
  * @property-read \ezp\Content\Type[] $types Appended items will not be stored, use TypeService->link()
  */
-class Group extends Model
+class Group extends Model implements ModelDefinition
 {
     /**
      * @var array List of read/Write VO properties on this object
@@ -61,6 +62,19 @@ class Group extends Model
     {
         $this->properties = new GroupValue();
         $this->types = new TypeCollection( 'ezp\\Content\\Type' );
+    }
+
+    /**
+     * Returns definition of the role object, atm: permissions
+     *
+     * @access private
+     * @return array
+     */
+    public static function definition()
+    {
+        return array(
+            'primaryProperties' => array( 'id' ),
+        );
     }
 
     /**

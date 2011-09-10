@@ -21,9 +21,10 @@ interface ModelStorageInterface
      * Attach a model object
      *
      * @param \ezp\Base\Model $object
-     * @param array $primaryIds Eg: array( 'id' => 2 ) or array( 'id' => 2, 'version' => 1 )
+     * @return bool False if object already was part of storage
+     * @throws \ezp\Base\Exception\Logic If object is already persisted but not by same object hash
      */
-    public function add( Model $object, array $primaryIds );
+    public function add( Model $object );
 
     /**
      * Checks if storage contains a model

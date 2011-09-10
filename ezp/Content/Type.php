@@ -97,7 +97,8 @@ class Type extends Model implements ModelDefinition
     {
         return array(
             'module' => 'class',
-            // @todo Add functions with group limitations
+            // @todo Enhance with functions and group limitations
+            'primaryProperties' => array( 'id', 'status' ),
         );
     }
 

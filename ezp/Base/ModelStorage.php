@@ -13,6 +13,7 @@ use ezp\Base\Exception\Logic,
     ezp\Base\Observable,
     ezp\Base\Observer,
     ezp\Base\Model,
+    ezp\Base\ModelDefinition,
     ezp\Base\ModelStorageInterface;
 
 /**
@@ -63,20 +64,30 @@ class ModelStorage implements Observer, ModelStorageInterface
      * Attach a model object
      *
      * @param \ezp\Base\Model $object
-     * @param array $primaryIds Eg: array( 'id' => 2 ) or array( 'id' => 2, 'status' => 1 )
      * @return bool False if object already was part of storage
      * @throws \ezp\Base\Exception\Logic If object is already persisted but not by same object hash
      */
-    public function add( Model $object, array $primaryIds )
+    public function add( Model $object )
     {
+        if ( !$object instanceof ModelDefinition || !$object instanceof Observable )
+            throw new Logic( __METHOD__, get_class( $object ) . " must inherit ModelDefinition & Observable" );
+
         $hash = spl_object_hash( $object );
         if ( isset( $this->entityIdentifiers[$hash] ) )
             return false;
 
         $className = get_class( $object );
+        $definition = $object->definition();
+        if ( empty( $definition['primaryProperties'] ) )
+            throw new Logic( __METHOD__, get_class( $object ) . "->definition() does not contain primaryProperties array" );
+
+        $primaryIds = array_map(
+            function( $property ) use ( $object ){ return $object->$property; },
+            $definition['primaryProperties']
+        );
         $primaryIdString = implode( '_', $primaryIds );
         if ( isset( $this->identityMap[$className][$primaryIdString] ) )
-            throw new Logic( 'ModelStorage->add()', 'primaryIdString of Model is already persisted but not with same object_hash' );
+            throw new Logic( __METHOD__, 'primaryIdString of Model is already persisted but not with same object_hash' );
 
         $object->attach( $this, 'update' );
         $object->attach( $this, 'destruct' );
@@ -107,7 +118,7 @@ class ModelStorage implements Observer, ModelStorageInterface
         $className = get_class( $object );
         $primaryIdString = $this->entityIdentifiers[$hash];
         if ( !isset( $this->identityMap[$className][$primaryIdString] ) )
-            throw new Logic( 'ModelStorage->has()', 'primaryIdString of $object by object hash lookup is not persisted' );
+            throw new Logic( __METHOD__, 'primaryIdString of $object by object hash lookup is not persisted' );
 
         if ( !isset( $this->identityMap[$className][$primaryIdString]['object'] ) )
             return null;
@@ -125,7 +136,7 @@ class ModelStorage implements Observer, ModelStorageInterface
     {
         $hash = spl_object_hash( $object );
         if ( !isset( $this->entityIdentifiers[$hash] ) )
-            throw new InvalidArgumentValue( 'ModelStorage->remove(): $object', $object );
+            throw new InvalidArgumentValue( __METHOD__ . ': $object', $object );
 
         $className = get_class( $object );
         $primaryIdString = $this->entityIdentifiers[$hash];
@@ -135,7 +146,7 @@ class ModelStorage implements Observer, ModelStorageInterface
         $object->detach( $this, 'destruct' );
 
         if ( !isset( $this->identityMap[$className][$primaryIdString] ) )
-            throw new Logic( 'ModelStorage->remove()', 'primaryIdString of $object by object hash lookup is not persisted' );
+            throw new Logic( __METHOD__, 'primaryIdString of $object by object hash lookup is not persisted' );
 
         unset( $this->identityMap[$className][$primaryIdString] );
         return true;
@@ -177,12 +188,12 @@ class ModelStorage implements Observer, ModelStorageInterface
 
         $hash = spl_object_hash( $subject );
         if ( !isset( $this->entityIdentifiers[$hash] ) )
-            throw new InvalidArgumentValue( 'ModelStorage->update(): $subject', $subject );
+            throw new InvalidArgumentValue( __METHOD__ . ': $subject', $subject );
 
         $className = get_class( $subject );
         $primaryIdString = $this->entityIdentifiers[$hash];
         if ( !isset( $this->identityMap[$className][$primaryIdString] ) )
-            throw new Logic( 'ModelStorage->update()', 'primaryIdString of $subject by object hash lookup is not persisted' );
+            throw new Logic( __METHOD__, 'primaryIdString of $subject by object hash lookup is not persisted' );
 
         if ( !isset( $this->identityMap[$className][$primaryIdString]['object'] ) )
             $this->identityMap[$className][$primaryIdString]['object'] = $subject;

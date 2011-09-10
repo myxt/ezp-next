@@ -581,9 +581,10 @@ class TypeTest extends BaseServiceTest
     public function testUpdateFieldDefinitionWithUnExistingFieldDefinition()
     {
         $type = $this->service->load( 1, 0 );
-        $type->fields[0]->name = array( 'eng-GB' => 'New name' );
-        $this->service->removeFieldDefinition( $type, $type->fields[0] );
-        $this->service->updateFieldDefinition( $type, $type->fields[0] );
+        $field =  $type->fields[0];
+        $field->name = array( 'eng-GB' => 'New name' );
+        $this->service->removeFieldDefinition( $type, $field );
+        $this->service->updateFieldDefinition( $type, $field );
     }
 
     /**
@@ -597,12 +598,13 @@ class TypeTest extends BaseServiceTest
         {
             $type = $this->service->load( 1, 0 );
             $type->fields[0]->name = array( 'eng-GB' => 'New name' );
+            $field = $type->fields[0];
             $this->service->delete( $type );
         }
         catch ( Exception $e )
         {
             self::fail( "Did not expect any exception here, but got:" . $e );
         }
-        $this->service->updateFieldDefinition( $type, $type->fields[0] );
+        $this->service->updateFieldDefinition( $type, $field );
     }
 }

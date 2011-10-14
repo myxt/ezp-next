@@ -46,7 +46,7 @@ abstract class Base extends PHPUnit_Framework_TestCase
          *   $sc = new ServiceContainer(
          *       Configuration::getInstance('service')->getAll(),
          *       array(
-         *           '@persistence_handler' => new \ezp\Persistence\Storage\Legacy\Handler( array( 'dns' => $dns ) )
+         *           '@persistence_handler' => new \ezp\Persistence\Storage\Legacy\Handler( array( 'dsn' => $dns ) )
          *       )
          *   );
          */
